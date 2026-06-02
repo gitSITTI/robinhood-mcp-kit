@@ -1,0 +1,4 @@
+Settings -> MCP servers
+Transport: Streamable HTTP
+URL: https://banking-agent.robinhood.com/mcp/banking
+Name: robinhood-banking

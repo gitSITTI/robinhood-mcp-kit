@@ -1,0 +1,10 @@
+.env
+.env.local
+.env.*
+!.env.example
+*.log
+.wrangler
+.terraform
+node_modules
+dist
+coverage
