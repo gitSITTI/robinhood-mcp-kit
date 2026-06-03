@@ -2,9 +2,6 @@
   "mcpServers": {
     "robinhood-banking": {
       "url": "https://banking-agent.robinhood.com/mcp/banking"
-    },
-    "robinhood-trading": {
-      "url": "https://agent.robinhood.com/mcp/trading"
     }
   }
 }
