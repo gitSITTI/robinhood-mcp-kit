@@ -1,1 +1,2 @@
-https://banking-agent.robinhood.com/mcp/banking
+Banking: https://banking-agent.robinhood.com/mcp/banking
+Trading: https://agent.robinhood.com/mcp/trading

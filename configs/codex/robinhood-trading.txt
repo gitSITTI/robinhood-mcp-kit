@@ -1,0 +1,4 @@
+Settings -> MCP servers
+Transport: Streamable HTTP
+URL: https://agent.robinhood.com/mcp/trading
+Name: robinhood-trading

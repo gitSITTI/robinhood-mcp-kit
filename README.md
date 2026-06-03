@@ -1,37 +1,47 @@
 # Robinhood MCP Kit
 
-This repo is a dedicated place to store Robinhood Banking MCP setup notes, client config templates, and secret-management helpers for the `gitSITTI` workspace.
+Dedicated repo for Robinhood MCP setup notes, client config templates, and secret-management helpers for the `gitSITTI` workspace.
 
-## Source
+## MCP Servers
 
-The MCP endpoint and setup flow in this repo were pulled from Robinhood's Agentic Credit Card help article:
+| Name | URL | Status |
+|------|-----|--------|
+| `robinhood-banking` | `https://banking-agent.robinhood.com/mcp/banking` | ✅ Live — authenticated |
+| `robinhood-trading` | `https://agent.robinhood.com/mcp/trading` | ✅ Live — pending auth |
 
-- MCP URL: `https://banking-agent.robinhood.com/mcp/banking`
-- Server name: `robinhood-banking`
+### Banking tools (authenticated)
+- `banking_get_agent_card_balance`
+- `banking_get_agent_card_creds`
+- `banking_get_agent_card_policy`
+- `banking_get_agent_card_status`
+- `banking_get_agent_card_transactions`
+- `banking_submit_feedback`
+- `banking_wait_for_agent_card_approval`
+
+### Trading tools
+- Available after authentication via OAuth flow
 
 ## What this repo contains
 
 - `docs/SETUP.md`: platform setup instructions
 - `docs/SECRETS.md`: what is and is not a secret for this integration
-- `configs/`: client-side MCP config examples
+- `configs/`: client-side MCP config examples (Claude Code, Claude Desktop, Codex, Cursor)
 - `scripts/`: PowerShell helpers for Cloudflare and AWS secret storage
 - `.env.example`: placeholder environment variables
 
 ## Important constraint
 
-Based on the Robinhood article, this integration uses an interactive authentication flow. No Robinhood API key or static token is documented in the source article. That means:
+This integration uses an interactive OAuth authentication flow. No static API key or token is needed:
 
-- The MCP URL is configuration, not a secret.
-- The Robinhood login/auth session is handled during MCP connect/authenticate.
-- Only optional wrapper app secrets you create around this MCP should be stored in Cloudflare or AWS.
+- MCP URLs are config, not secrets.
+- Auth sessions are handled during MCP connect/authenticate.
+- Only optional wrapper app secrets you create around these MCPs should be stored in Cloudflare or AWS.
 
-## Suggested repo name on GitHub
+## Claude Code setup (already applied to this workspace)
 
-`gitSITTI/robinhood-mcp-kit`
+```powershell
+claude mcp add robinhood-banking --transport http --scope user https://banking-agent.robinhood.com/mcp/banking
+claude mcp add robinhood-trading --transport http --scope user https://agent.robinhood.com/mcp/trading
+```
 
-## Suggested first steps
-
-1. Create the GitHub repo.
-2. Push this folder as its own git repository.
-3. Store only optional wrapper secrets in Cloudflare/AWS.
-4. Add the MCP URL to the client you want to use.
+Authentication is done via OAuth — Claude Code starts the flow automatically on first use.
