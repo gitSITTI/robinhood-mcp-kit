@@ -7,8 +7,7 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 | Name | URL | Status |
 |------|-----|--------|
 | `robinhood-banking` | `https://banking-agent.robinhood.com/mcp/banking` | ✅ Live — authenticated |
-
-> Note: A `/mcp/trading` endpoint was probed and found to exist (HTTP 405) but has a server-side OAuth misconfiguration and is not officially documented by Robinhood. Removed from config until Robinhood publishes it.
+| `robinhood-trading` | `https://agent.robinhood.com/mcp/trading` | ⏳ Endpoint live, OAuth pending Robinhood fix |
 
 ### Banking tools (authenticated)
 - `banking_get_agent_card_balance`
@@ -18,6 +17,9 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 - `banking_get_agent_card_transactions`
 - `banking_submit_feedback`
 - `banking_wait_for_agent_card_approval`
+
+### Trading tools
+- Available once Robinhood resolves the OAuth protected resource metadata mismatch
 
 ## What this repo contains
 
@@ -31,6 +33,7 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 
 ```powershell
 claude mcp add robinhood-banking --transport http --scope user https://banking-agent.robinhood.com/mcp/banking
+claude mcp add robinhood-trading --transport http --scope user https://agent.robinhood.com/mcp/trading
 ```
 
 Authentication is done via OAuth — Claude Code starts the flow automatically on first use.
