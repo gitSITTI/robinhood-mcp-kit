@@ -1,0 +1,29 @@
+{
+  "skill_name": "robinhood-banking",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "How much have I spent on my agentic card this month and what's my limit?",
+      "expected_output": "Calls banking_get_agent_card_balance and banking_get_agent_card_policy, reports spending and limit in dollars (not microdollars)",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "Is my Robinhood agentic card active and ready to use?",
+      "expected_output": "Calls banking_get_agent_card_status, translates status to plain language, mentions balance/limit",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Show me the last few transactions on my agentic card",
+      "expected_output": "Calls banking_get_agent_card_transactions, presents a clean table with dates, merchants, and dollar amounts",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I need to buy something online — can you get my card details so I can pay at checkout?",
+      "expected_output": "Calls banking_get_agent_card_creds and provides card number, CVV, expiry for use at checkout",
+      "files": []
+    }
+  ]
+}

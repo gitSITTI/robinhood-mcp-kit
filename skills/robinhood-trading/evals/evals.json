@@ -1,0 +1,29 @@
+{
+  "skill_name": "robinhood-trading",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "What's my portfolio worth right now and how much buying power do I have?",
+      "expected_output": "Calls get_accounts then get_portfolio, presents total value, buying power, and asset breakdown clearly",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "What stocks am I currently holding?",
+      "expected_output": "Calls get_accounts and get_equity_positions, shows clean table of positions with symbols and quantities",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "What's Apple trading at right now?",
+      "expected_output": "Calls get_equity_quotes for AAPL, shows price, change, and change %",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Buy 2 shares of NVDA for me",
+      "expected_output": "Follows safety flow: tradability check → quote → review_equity_order → shows review to user and asks for confirmation before placing",
+      "files": []
+    }
+  ]
+}
