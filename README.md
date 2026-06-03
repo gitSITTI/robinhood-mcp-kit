@@ -4,12 +4,12 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 
 ## MCP Servers
 
-| Name | URL | Status |
-|------|-----|--------|
-| `robinhood-banking` | `https://banking-agent.robinhood.com/mcp/banking` | ✅ Live — authenticated |
-| `robinhood-trading` | `https://agent.robinhood.com/mcp/trading` | ⏳ Endpoint live, OAuth pending Robinhood fix |
+| Name | URL | Scope | Status |
+|------|-----|-------|--------|
+| `robinhood-banking` | `https://banking-agent.robinhood.com/mcp/banking` | `credit-card` | ✅ Authenticated |
+| `robinhood-trading` | `https://agent.robinhood.com/mcp/trading` | `internal` | ✅ Authenticated |
 
-### Banking tools (authenticated)
+### Banking tools
 - `banking_get_agent_card_balance`
 - `banking_get_agent_card_creds`
 - `banking_get_agent_card_policy`
@@ -19,21 +19,34 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 - `banking_wait_for_agent_card_approval`
 
 ### Trading tools
-- Available once Robinhood resolves the OAuth protected resource metadata mismatch
+- `get_accounts`
+- `get_portfolio`
+- `get_equity_positions`
+- `get_equity_quotes`
+- `get_equity_tradability`
+- `get_equity_orders`
+- `place_equity_order`
+- `review_equity_order`
+- `cancel_equity_order`
+- `search`
 
 ## What this repo contains
 
-- `docs/SETUP.md`: platform setup instructions
-- `docs/SECRETS.md`: what is and is not a secret for this integration
-- `configs/`: client-side MCP config examples (Claude Code, Claude Desktop, Codex, Cursor)
-- `scripts/`: PowerShell helpers for Cloudflare and AWS secret storage
-- `.env.example`: placeholder environment variables
+- `docs/SETUP.md` — platform setup instructions for Claude Code, Desktop, Codex, Cursor, ChatGPT
+- `docs/SECRETS.md` — what is and isn't a secret, credential storage location
+- `docs/SESSION-LOG.md` — detailed log of the full setup session including issues and fixes
+- `configs/` — client-side MCP config examples (Claude Code, Claude Desktop, Codex, Cursor)
+- `scripts/` — PowerShell helpers for Cloudflare and AWS secret storage
+- `.env.example` — placeholder environment variables
 
-## Claude Code setup (already applied to this workspace)
+## Quick start (Claude Code)
 
 ```powershell
+npm install -g @anthropic-ai/claude-code
+
 claude mcp add robinhood-banking --transport http --scope user https://banking-agent.robinhood.com/mcp/banking
 claude mcp add robinhood-trading --transport http --scope user https://agent.robinhood.com/mcp/trading
 ```
 
-Authentication is done via OAuth — Claude Code starts the flow automatically on first use.
+Then authenticate each server — Claude starts the OAuth flow automatically on first use.
+See `docs/SETUP.md` for full instructions and `docs/SESSION-LOG.md` for troubleshooting.

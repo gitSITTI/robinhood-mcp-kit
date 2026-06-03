@@ -1,35 +1,54 @@
 # Secrets
 
-## What is not a secret
+## What is NOT a secret
 
-These values are safe to keep in docs or checked-in config:
+Safe to keep in docs and checked-in config:
 
-- `robinhood-banking`
-- `https://banking-agent.robinhood.com/mcp/banking`
+- MCP server names (`robinhood-banking`, `robinhood-trading`)
+- MCP URLs (`https://banking-agent.robinhood.com/mcp/banking`, `https://agent.robinhood.com/mcp/trading`)
+- OAuth client IDs (`LtLiNmbs9owbYfWgBlC68Z2X-claude` for banking, `LtLiNmbs9owbYfWgBlC68Z2V-claude` for trading)
 
-## What may be a secret
+## What IS a secret
 
-The Robinhood article does not publish a static API token, API key, or client secret for this MCP. Do not invent one. Only store secrets if you create wrapper infrastructure around the MCP, for example:
+These live in `~/.claude/.credentials.json` and are managed automatically by Claude Code — do not commit them:
+
+- OAuth access tokens
+- OAuth refresh tokens
+- PKCE code verifiers / challenges
+
+## What may be a secret (wrapper infrastructure only)
+
+Only relevant if you build your own proxy or Cloudflare Worker around these MCPs:
 
 - `ROBINHOOD_MCP_CLIENT_ID`
 - `ROBINHOOD_MCP_CLIENT_SECRET`
 - `ROBINHOOD_MCP_SESSION_ENCRYPTION_KEY`
-- Any OAuth callback or session secret used by your own proxy or Worker
 
-## Cloudflare recommendation
+Store those in Cloudflare secrets or AWS Secrets Manager (`robinhood/mcp/config`).
+Use the scripts in `scripts/` for that.
 
-Use Cloudflare secrets only for values required by your own Cloudflare Worker or edge proxy. Example names:
+## Credential storage location
 
-- `ROBINHOOD_MCP_CLIENT_ID`
-- `ROBINHOOD_MCP_CLIENT_SECRET`
-- `ROBINHOOD_MCP_SESSION_ENCRYPTION_KEY`
+Claude Code stores OAuth tokens at:
+```
+~/.claude/.credentials.json
+```
 
-Do not store the MCP URL as a secret unless you want one uniform config path. It is not sensitive.
+Format (per server):
+```json
+{
+  "mcpOAuth": {
+    "<server-name>|<hash>": {
+      "serverUrl": "...",
+      "accessToken": "...",
+      "refreshToken": "...",
+      "clientId": "...",
+      "expiresAt": 0,
+      "scope": "..."
+    }
+  }
+}
+```
 
-## AWS recommendation
-
-Use AWS Secrets Manager or SSM Parameter Store for the same optional wrapper secrets. Suggested secret id:
-
-- `robinhood/mcp/config`
-
-Keep non-sensitive values in checked-in config when possible, and reserve secret stores for credentials only.
+If you need to force a re-auth, delete the entry for that server from this file
+and restart Claude Code.
