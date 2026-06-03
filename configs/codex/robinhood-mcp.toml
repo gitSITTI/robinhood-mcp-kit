@@ -1,0 +1,11 @@
+[mcp_servers.robinhood-banking]
+url = "https://banking-agent.robinhood.com/mcp/banking"
+enabled = true
+startup_timeout_sec = 30
+tool_timeout_sec = 60
+
+[mcp_servers.robinhood-trading]
+url = "https://agent.robinhood.com/mcp/trading"
+enabled = true
+startup_timeout_sec = 30
+tool_timeout_sec = 60

@@ -10,10 +10,13 @@ param(
   [string]$SessionEncryptionKey
 )
 
-$aws = "C:\Users\edsos\AppData\Roaming\Python\Python312\Scripts\aws.cmd"
+$aws = Get-Command aws2 -ErrorAction SilentlyContinue
+if (-not $aws) {
+  $aws = Get-Command aws -ErrorAction SilentlyContinue
+}
 
-if (-not (Test-Path $aws)) {
-  throw "aws.cmd was not found at $aws"
+if (-not $aws) {
+  throw "Neither aws2 nor aws was found in PATH"
 }
 
 $payload = @{
@@ -22,8 +25,8 @@ $payload = @{
   ROBINHOOD_MCP_SESSION_ENCRYPTION_KEY = $SessionEncryptionKey
 } | ConvertTo-Json -Compress
 
-& $aws secretsmanager create-secret --region $Region --name $SecretId --secret-string $payload
+& $aws.Source secretsmanager create-secret --region $Region --name $SecretId --secret-string $payload
 
 if ($LASTEXITCODE -ne 0) {
-  & $aws secretsmanager put-secret-value --region $Region --secret-id $SecretId --secret-string $payload
+  & $aws.Source secretsmanager put-secret-value --region $Region --secret-id $SecretId --secret-string $payload
 }

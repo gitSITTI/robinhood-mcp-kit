@@ -6,10 +6,13 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 
 | Name | URL | Scope | Status |
 |------|-----|-------|--------|
-| `robinhood-banking` | `https://banking-agent.robinhood.com/mcp/banking` | `credit-card` | ✅ Authenticated |
-| `robinhood-trading` | `https://agent.robinhood.com/mcp/trading` | `internal` | ✅ Authenticated |
+| `robinhood-banking` | `https://banking-agent.robinhood.com/mcp/banking` | `credit-card` | Configured |
+| `robinhood-trading` | `https://agent.robinhood.com/mcp/trading` | Robinhood-enabled account access | Configured |
 
-### Banking tools
+## Tools
+
+### Banking
+
 - `banking_get_agent_card_balance`
 - `banking_get_agent_card_creds`
 - `banking_get_agent_card_policy`
@@ -18,7 +21,8 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 - `banking_submit_feedback`
 - `banking_wait_for_agent_card_approval`
 
-### Trading tools
+### Trading
+
 - `get_accounts`
 - `get_portfolio`
 - `get_equity_positions`
@@ -32,14 +36,28 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 
 ## What this repo contains
 
-- `docs/SETUP.md` — platform setup instructions for Claude Code, Desktop, Codex, Cursor, ChatGPT
-- `docs/SECRETS.md` — what is and isn't a secret, credential storage location
-- `docs/SESSION-LOG.md` — detailed log of the full setup session including issues and fixes
-- `configs/` — client-side MCP config examples (Claude Code, Claude Desktop, Codex, Cursor)
-- `scripts/` — PowerShell helpers for Cloudflare and AWS secret storage
-- `.env.example` — placeholder environment variables
+- `docs/SETUP.md` - platform setup instructions for Claude Code, Desktop, Codex, Cursor, and ChatGPT
+- `docs/SECRETS.md` - what is and is not a secret, plus credential storage locations
+- `docs/SESSION-LOG.md` - sanitized setup session notes and troubleshooting
+- `configs/` - client-side MCP config examples
+- `scripts/` - PowerShell helpers for Cloudflare and AWS secret storage
+- `.env.example` - placeholder environment variables
 
-## Quick start (Claude Code)
+## Quick Start: Codex
+
+Add both MCP servers, authenticate them, then start a fresh Codex session so the MCP tool list initializes from the updated config.
+
+```powershell
+codex mcp add robinhood-banking --url https://banking-agent.robinhood.com/mcp/banking
+codex mcp add robinhood-trading --url https://agent.robinhood.com/mcp/trading
+codex mcp login robinhood-banking
+codex mcp login robinhood-trading
+codex mcp list --json
+```
+
+For Desktop config, use `configs/codex/robinhood-mcp.toml`.
+
+## Quick Start: Claude Code
 
 ```powershell
 npm install -g @anthropic-ai/claude-code
@@ -48,5 +66,5 @@ claude mcp add robinhood-banking --transport http --scope user https://banking-a
 claude mcp add robinhood-trading --transport http --scope user https://agent.robinhood.com/mcp/trading
 ```
 
-Then authenticate each server — Claude starts the OAuth flow automatically on first use.
+Then authenticate each server. Claude starts the OAuth flow automatically on first use.
 See `docs/SETUP.md` for full instructions and `docs/SESSION-LOG.md` for troubleshooting.

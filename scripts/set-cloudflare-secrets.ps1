@@ -7,20 +7,20 @@ param(
   [string]$SessionEncryptionKey
 )
 
-$wrangler = "C:\Users\edsos\AppData\Roaming\npm\wrangler.cmd"
+$wrangler = Get-Command wrangler -ErrorAction SilentlyContinue
 
-if (-not (Test-Path $wrangler)) {
-  throw "wrangler.cmd was not found at $wrangler"
+if (-not $wrangler) {
+  throw "wrangler was not found in PATH"
 }
 
 if ($ClientId) {
-  $ClientId | & $wrangler secret put ROBINHOOD_MCP_CLIENT_ID --name $WorkerName
+  $ClientId | & $wrangler.Source secret put ROBINHOOD_MCP_CLIENT_ID --name $WorkerName
 }
 
 if ($ClientSecret) {
-  $ClientSecret | & $wrangler secret put ROBINHOOD_MCP_CLIENT_SECRET --name $WorkerName
+  $ClientSecret | & $wrangler.Source secret put ROBINHOOD_MCP_CLIENT_SECRET --name $WorkerName
 }
 
 if ($SessionEncryptionKey) {
-  $SessionEncryptionKey | & $wrangler secret put ROBINHOOD_MCP_SESSION_ENCRYPTION_KEY --name $WorkerName
+  $SessionEncryptionKey | & $wrangler.Source secret put ROBINHOOD_MCP_SESSION_ENCRYPTION_KEY --name $WorkerName
 }
