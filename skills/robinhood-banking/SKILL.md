@@ -1,19 +1,28 @@
 ---
 name: robinhood-banking
 description: >
-  Robinhood Agentic Credit Card skill - use whenever the user mentions their
+  Robinhood Agentic Credit Card skill — use whenever the user mentions their
   Robinhood card, agentic card, card balance, card credentials, card spending,
   card transactions, monthly limit, purchase approval, or wants to use their
   Robinhood card to pay for something. Handles all robinhood-banking MCP
-  operations.
+  operations: checking card status and balance, fetching card credentials for
+  checkout, reviewing transaction history, managing purchase approvals, and
+  inspecting card policy. Always use this skill instead of calling the
+  robinhood-banking MCP tools directly.
 ---
 
-# Robinhood Banking - Agentic Credit Card
+# Robinhood Banking — Agentic Credit Card
 
-Use the `robinhood-banking` MCP server to manage the user's Robinhood Agentic
-Credit Card workflows.
+You have access to the `robinhood-banking` MCP server. Use it to manage the
+user's Robinhood Agentic Credit Card on their behalf.
 
-## Tools Available
+## Card Summary (as of Jun 2, 2026)
+- Status: Active (Normal)
+- Monthly limit: $110.00
+- Spent this month: $0.00
+- Card type: Agentic virtual card linked to Robinhood Gold Card
+
+## Tools
 
 | Tool | When to use |
 |------|-------------|
@@ -23,47 +32,34 @@ Credit Card workflows.
 | `banking_get_agent_card_creds` | Card number, CVV, expiry for checkout |
 | `banking_get_agent_card_transactions` | Spending history on the agentic card |
 | `banking_wait_for_agent_card_approval` | Wait for user to approve a pending purchase |
-| `banking_submit_feedback` | Report an issue or submit feedback to Robinhood |
+| `banking_submit_feedback` | Report an issue or submit feedback |
 
 ## Workflows
 
-### Check Card Health
+### Check card health
+Call `banking_get_agent_card_status` + `banking_get_agent_card_balance` together.
+- `cardStatus: NORMAL` → active and usable
+- `monthlyLimit` in microdollars — divide by 1,000,000
+- Negative cash = outstanding balance
 
-Call `banking_get_agent_card_status` and `banking_get_agent_card_balance`
-together. Convert microdollar amounts to dollars before showing them.
+### Make a purchase
+1. Confirm item and price with user
+2. Call `banking_get_agent_card_creds` for card number, CVV, expiry
+3. Use at checkout — don't display unnecessarily
+4. If policy requires approval → call `banking_wait_for_agent_card_approval`
 
-### Make A Purchase
-
-The agentic card can be used for checkout flows. Follow this sequence:
-
-1. Confirm the item and price with the user before fetching credentials.
-2. Call `banking_get_agent_card_creds` only when credentials are needed.
-3. Use card details at checkout; do not display them unless necessary.
-4. If policy requires approval, call `banking_wait_for_agent_card_approval` and tell the user to approve in the Robinhood app.
-
-### Review Spending
-
-Call `banking_get_agent_card_transactions` for transaction history. Present a
-clean table with date, merchant, and amount. Convert microdollar amounts to
-dollars.
-
-### Handle An Approval Prompt
-
-If a purchase is pending approval, call `banking_wait_for_agent_card_approval`
-and tell the user you are waiting for approval in the Robinhood app.
+### Review spending
+Call `banking_get_agent_card_transactions`. Present as table: date, merchant, amount (convert microdollars).
 
 ## Authentication
-
-The `robinhood-banking` MCP requires OAuth. In a fresh session it may prompt for
-re-authentication. If you get an auth error or the tools are unavailable:
-
-1. Start the MCP client's OAuth flow for `robinhood-banking`.
-2. Open the authorization URL in a browser.
-3. If the browser redirects to `localhost:PORT/callback?code=...`, copy the full callback URL back into the client when prompted.
+The MCP requires OAuth per session. If tools are unavailable:
+1. Call `mcp__robinhood-banking__authenticate` to start OAuth flow
+2. Give user the authorization URL
+3. After they authorize, browser redirects to `localhost:PORT/callback?code=...` — page will error, that's expected
+4. Have them copy the full URL and call `mcp__robinhood-banking__complete_authentication`
 
 ## Display Conventions
-
-- Always convert microdollar values by dividing by 1,000,000 before showing the user.
-- Mask card credentials and show only what is needed at the moment of checkout.
-- Mention when the card is near its monthly limit.
-- If `cardStatus` is not `NORMAL`, warn the user before attempting a purchase.
+- Always convert microdollars (÷ 1,000,000) before showing user
+- Mask card credentials — show only at moment of checkout
+- Warn if near monthly limit
+- Warn if `cardStatus` is not NORMAL before attempting purchase
