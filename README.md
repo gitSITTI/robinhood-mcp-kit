@@ -40,7 +40,7 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 - `docs/SECRETS.md` - what is and is not a secret, plus credential storage locations
 - `docs/SESSION-LOG.md` - sanitized setup session notes and troubleshooting
 - `configs/` - client-side MCP config examples
-- `scripts/` - PowerShell helpers for Cloudflare and AWS secret storage
+- `scripts/` - PowerShell helpers for MCP install/startup checks and Cloudflare/AWS secret storage
 - `.env.example` - placeholder environment variables
 
 ## Quick Start: Codex
@@ -53,6 +53,13 @@ codex mcp add robinhood-trading --url https://agent.robinhood.com/mcp/trading
 codex mcp login robinhood-banking
 codex mcp login robinhood-trading
 codex mcp list --json
+```
+
+Or use the helper:
+
+```powershell
+.\scripts\install-robinhood-mcp.ps1 -Client Codex -Login
+.\scripts\test-codex-robinhood-startup.ps1
 ```
 
 For Desktop config, use `configs/codex/robinhood-mcp.toml`.

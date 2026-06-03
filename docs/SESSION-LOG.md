@@ -27,6 +27,11 @@ Expected authenticated status:
 - `robinhood-banking`: `o_auth`
 - `robinhood-trading`: `o_auth`
 
+Operational helpers added:
+
+- `scripts/install-robinhood-mcp.ps1`
+- `scripts/test-codex-robinhood-startup.ps1`
+
 ## Endpoint Discovery
 
 The correct MCP URLs are:

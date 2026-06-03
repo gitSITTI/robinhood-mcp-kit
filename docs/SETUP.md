@@ -56,7 +56,20 @@ codex mcp login robinhood-trading
 codex mcp list --json
 ```
 
+Helper script:
+
+```powershell
+.\scripts\install-robinhood-mcp.ps1 -Client Codex -Login
+.\scripts\test-codex-robinhood-startup.ps1
+```
+
 The expected authenticated status is `o_auth` for both servers. Start a fresh Codex session after login so the MCP tool list initializes from the updated config.
+
+## Claude Helper
+
+```powershell
+.\scripts\install-robinhood-mcp.ps1 -Client Claude
+```
 
 ## Cursor
 
