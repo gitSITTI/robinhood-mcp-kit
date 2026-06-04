@@ -35,6 +35,16 @@ Sync command:
 .\scripts\sync-chatgpt-app-secrets.ps1 -Cloudflare -Aws -WorkerName robinhood-chatgpt-app -Region us-east-2
 ```
 
+If AWS is not authenticated yet, run:
+
+```powershell
+.\scripts\aws-login-and-sync-chatgpt-app-secrets.ps1 -Region us-east-2 -SecretId robinhood/chatgpt-app/config
+```
+
+The command starts `aws login --remote`, asks for the browser authorization
+code, verifies `sts get-caller-identity`, and then writes the same secret bundle
+to AWS Secrets Manager.
+
 ## Reuse From Other Projects
 
 Cursor, Claude, GitHub Actions, or other projects should pull from AWS Secrets
@@ -77,8 +87,8 @@ https://robinhood-chatgpt-app.edgar-sosa553.workers.dev
 ```
 
 Cloudflare secrets have been uploaded for the Worker. AWS Secrets Manager sync
-is scripted, but the local AWS CLI currently needs credentials configured before
-`robinhood/chatgpt-app/config` can be written.
+is scripted, but the local AWS CLI needs `aws login` or another credential
+provider before `robinhood/chatgpt-app/config` can be written.
 
 ## Safety Model
 
