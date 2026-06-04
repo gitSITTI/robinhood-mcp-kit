@@ -39,8 +39,10 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 - `docs/SETUP.md` - platform setup instructions for Claude Code, Desktop, Codex, Cursor, and ChatGPT
 - `docs/SECRETS.md` - what is and is not a secret, plus credential storage locations
 - `docs/SESSION-LOG.md` - sanitized setup session notes and troubleshooting
+- `docs/CHATGPT_APP.md` - Cloudflare-hosted ChatGPT app bridge setup
 - `configs/` - client-side MCP config examples
 - `scripts/` - PowerShell helpers for MCP install/startup checks and Cloudflare/AWS secret storage
+- `chatgpt-app/` - Cloudflare Worker MCP bridge for ChatGPT Apps
 - `.env.example` - placeholder environment variables
 
 ## Quick Start: Codex

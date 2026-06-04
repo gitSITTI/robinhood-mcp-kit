@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "robinhood-chatgpt-app",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-28",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ROBINHOOD_MCP_TRADING_URL": "https://agent.robinhood.com/mcp/trading",
+    "ROBINHOOD_CRYPTO_API_BASE": "https://trading.robinhood.com",
+    "APP_ENV": "production"
+  }
+}
