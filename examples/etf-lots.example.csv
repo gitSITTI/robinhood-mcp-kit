@@ -1,0 +1,4 @@
+symbol,purchase_date,shares,sale_date,note
+YMAX,2026-01-03,10,,example weekly ETF lot
+NVDY,2026-02-15,5,,example monthly/weekly ETF lot
+YMAX,2026-03-01,2,2026-04-15,example sold lot

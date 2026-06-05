@@ -42,8 +42,10 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 - `docs/CHATGPT_APP.md` - Cloudflare-hosted ChatGPT app bridge setup
 - `docs/CLOUDFLARE_ONLY_RECOVERY.md` - Cloudflare-only recovery and reuse path while AWS login is unavailable
 - `docs/LOCAL_SECRET_SOURCE_OF_TRUTH.md` - local untracked secret bundle location and regeneration command
+- `docs/ETF_INCOME_CALCULATOR.md` - estimate ETF distribution income from purchase lots and online distribution tables
 - `configs/` - client-side MCP config examples
 - `scripts/` - PowerShell helpers for MCP install/startup checks and Cloudflare/AWS secret storage
+- `skills/etf-income-calculator/` - reusable Codex workflow for ETF distribution income calculations
 - `chatgpt-app/` - Cloudflare Worker MCP bridge for ChatGPT Apps
 - `.env.example` - placeholder environment variables
 
