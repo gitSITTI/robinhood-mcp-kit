@@ -65,14 +65,34 @@ jobs:
   powershell-lint:
     name: PSScriptAnalyzer (advisory)
     runs-on: ubuntu-latest
-    continue-on-error: true   # advisory only — does not block the build
+    # Advisory only: this job REPORTS PowerShell hygiene findings in the logs but
+    # never fails the PR. The step always exits 0 (report-only); continue-on-error
+    # is a backstop so even a runner/setup hiccup can't block the build.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Run PSScriptAnalyzer (errors only)
+      - name: Run PSScriptAnalyzer (errors only, report-only)
         shell: pwsh
         run: |
-          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+          $ErrorActionPreference = 'Continue'
+          # PSGallery is not always pre-registered on the runner's pwsh — register
+          # it before trusting it, otherwise Set-PSRepository throws "not found".
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default -ErrorAction SilentlyContinue
+          }
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+          try {
+            Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop
+          } catch {
+            Write-Host "::warning::Could not install PSScriptAnalyzer: $($_.Exception.Message). Skipping (advisory)."
+            exit 0
+          }
           $results = Invoke-ScriptAnalyzer -Path scripts -Recurse -Severity Error
-          $results | Format-Table -AutoSize
-          if ($results) { exit 1 } else { Write-Host "No PSScriptAnalyzer errors." }
+          if ($results) {
+            Write-Host "::warning::PSScriptAnalyzer reported $($results.Count) error-severity finding(s) (advisory):"
+            $results | Format-Table -AutoSize | Out-String | Write-Host
+          } else {
+            Write-Host "No PSScriptAnalyzer error-severity findings."
+          }
+          # Report-only: never fail the build on findings or setup issues.
+          exit 0
