@@ -1,5 +1,98 @@
 # Session Log - Initial Setup
 
+## Current Summary
+
+This repo now tracks the reusable Robinhood MCP setup for Codex, Claude,
+Cursor, ChatGPT Apps, Cloudflare, and future AWS secret storage.
+
+### GitHub
+
+- Repo: `gitSITTI/robinhood-mcp-kit`
+- Branch: `main`
+- Purpose: sanitized operational scripts, MCP config templates, ChatGPT app
+  bridge code, secret-sync helpers, and repeatable Robinhood analysis skills.
+
+### Cloudflare ChatGPT App Bridge
+
+- Worker: `robinhood-chatgpt-app`
+- MCP endpoint: `https://robinhood-chatgpt-app.edgar-sosa553.workers.dev/mcp`
+- Active secret layer: Cloudflare Worker secrets.
+- Central secret-store target: Cloudflare account-level
+  `default_secrets_store`.
+- AWS target: `robinhood/chatgpt-app/config` in `us-east-2`, pending local AWS
+  login.
+
+Remote MCP smoke tests verified:
+
+- `tools/list` returns the bridge tools.
+- `run_no_trade_audit` completes without placing orders.
+- Crypto quote/prep flow can validate USDC buy spread before any order is
+  placed.
+
+Known limitation:
+
+- Robinhood upstream MCP currently exposes accounts, portfolio, positions,
+  quotes, and equity orders through the available trading tools, but not
+  dividend/transfer history. Broker-confirmed ETF income still requires
+  Robinhood activity, statements, or a local actual-income validation CSV.
+
+### Local Secret Source Of Truth
+
+The canonical untracked local secret bundle is outside the repo:
+
+```text
+C:\Users\edsos\.robinhood\source-of-truth\robinhood-secrets-source-of-truth.json
+C:\Users\edsos\.robinhood\source-of-truth\robinhood-secrets-source-of-truth.env
+```
+
+Regenerate after OAuth refresh, crypto API-key rotation, or app-secret
+rotation:
+
+```powershell
+.\scripts\export-local-secret-source-of-truth.ps1
+```
+
+### ETF Income Calculator
+
+Added a reusable workflow for estimating ETF distribution income from purchase
+lots and validating it against broker-confirmed activity/balance data.
+
+Primary command:
+
+```powershell
+.\scripts\calculate-etf-distribution-income.ps1 `
+  -Lots .\my-joint-account-lots.local.csv `
+  -ActualIncome .\my-joint-account-income.local.csv `
+  -OutputDir .\reports\joint-etf-income `
+  -AsOf 2026-06-05 `
+  -ValidationTolerance 0.05 `
+  -FailOnValidationMismatch `
+  -Refresh
+```
+
+Important files:
+
+- `scripts/calculate-etf-distribution-income.py`
+- `scripts/calculate-etf-distribution-income.ps1`
+- `docs/ETF_INCOME_CALCULATOR.md`
+- `skills/etf-income-calculator/SKILL.md`
+- `examples/etf-lots.example.csv`
+- `examples/etf-actual-income.example.csv`
+
+The calculator writes:
+
+- `etf-income-summary.csv` - one row per lot.
+- `etf-income-payments.csv` - one row per eligible distribution.
+- `etf-income-validation.csv` - estimated vs actual income variance by symbol
+  and total, when `-ActualIncome` is provided.
+
+Validation behavior:
+
+- Matching actual income passes.
+- Mismatched actual income exits with code `2` when
+  `-FailOnValidationMismatch` is enabled.
+- Generated reports, cache files, and `*.local.csv` are ignored by git.
+
 ## What was configured
 
 ### Claude Code
