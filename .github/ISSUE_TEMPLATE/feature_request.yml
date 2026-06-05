@@ -1,0 +1,31 @@
+name: Feature request
+description: Propose a new tool, config, script, or setup-flow improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What gap or friction does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: What should change, and where (Worker / scripts / configs / docs)?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Cloudflare Worker (chatgpt-app)
+        - PowerShell scripts
+        - Client configs
+        - Skills / evals
+        - Docs / setup
+        - CI / tooling
+    validations:
+      required: true

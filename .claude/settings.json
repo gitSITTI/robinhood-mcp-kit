@@ -1,0 +1,15 @@
+{
+  "$comment": "Claude Code (web + CLI) project settings. The SessionStart hook installs the Worker's npm deps so `npm run check` works immediately in a fresh cloud session. See .claude/session-start.sh.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/session-start.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

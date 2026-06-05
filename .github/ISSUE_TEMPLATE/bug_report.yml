@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in the Worker, scripts, configs, or setup flow behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do NOT paste API keys, private keys, access tokens, or account numbers. Redact first.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe, and what did you expect instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Cloudflare Worker (chatgpt-app)
+        - PowerShell scripts
+        - Client config (Claude/Codex/Cursor/ChatGPT)
+        - Skills / evals
+        - Docs / setup
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands run and (redacted) inputs.
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Node/wrangler version, client app, local vs deployed.
+    validations:
+      required: false

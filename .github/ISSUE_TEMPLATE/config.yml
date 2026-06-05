@@ -1,0 +1,6 @@
+# Disable blank issues so every report uses a structured template.
+blank_issues_enabled: false
+contact_links:
+  - name: Security report (private)
+    url: https://github.com/gitSITTI/robinhood-mcp-kit/security/advisories/new
+    about: Report credential/token exposure or unsafe-order issues privately. Do NOT open a public issue.

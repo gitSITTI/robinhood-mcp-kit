@@ -1,0 +1,17 @@
+# Optional local pre-commit hooks. Install with:
+#   pip install pre-commit && pre-commit install
+# Lightweight, language-agnostic guards that mirror CI hygiene. The Worker
+# type-check (`npm run check`) is intentionally NOT run here to keep commits fast;
+# CI gates that. Bump revs with `pre-commit autoupdate`.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json          # validates tracked .json (not .jsonc)
+        exclude: \.jsonc$
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: detect-private-key  # extra guard against committing secrets
