@@ -1,0 +1,98 @@
+# Continuous Integration for robinhood-mcp-kit.
+#
+# WHAT THIS GATES (for any human or AI agent reading this):
+#   worker     : the Cloudflare Worker in chatgpt-app/ must type-check
+#                (`npm run check` == `tsc --noEmit`).  BLOCKING.
+#   json       : every tracked .json file must parse (evals, configs, package
+#                manifests).  BLOCKING.  (.jsonc is skipped — it allows comments.)
+#   powershell : PSScriptAnalyzer over scripts/*.ps1.  ADVISORY (non-blocking) —
+#                the scripts are operational helpers, surfaced for hygiene only.
+#
+# This workflow uses NO secrets. It is separate from sync-robinhood-secrets-from-aws.yml,
+# which is an operational secret-sync job that DOES use cloud credentials.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  worker-typecheck:
+    name: Worker type-check (chatgpt-app)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chatgpt-app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: chatgpt-app/package-lock.json
+      - name: Install dependencies (clean, lockfile-exact)
+        run: npm ci
+      - name: Type-check (tsc --noEmit)
+        run: npm run check
+
+  json-validate:
+    name: Validate tracked JSON
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every tracked .json file
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          # .jsonc (e.g. wrangler.jsonc) permits comments, so it is excluded.
+          while IFS= read -r f; do
+            if ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f"; then
+              echo "INVALID JSON: $f" >&2
+              fail=1
+            else
+              echo "ok  $f"
+            fi
+          done < <(git ls-files '*.json')
+          exit "$fail"
+
+  powershell-lint:
+    name: PSScriptAnalyzer (advisory)
+    runs-on: ubuntu-latest
+    # Advisory only: this job REPORTS PowerShell hygiene findings in the logs but
+    # never fails the PR. The step always exits 0 (report-only); continue-on-error
+    # is a backstop so even a runner/setup hiccup can't block the build.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run PSScriptAnalyzer (errors only, report-only)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          # PSGallery is not always pre-registered on the runner's pwsh — register
+          # it before trusting it, otherwise Set-PSRepository throws "not found".
+          if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
+            Register-PSRepository -Default -ErrorAction SilentlyContinue
+          }
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+          try {
+            Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser -ErrorAction Stop
+          } catch {
+            Write-Host "::warning::Could not install PSScriptAnalyzer: $($_.Exception.Message). Skipping (advisory)."
+            exit 0
+          }
+          $results = Invoke-ScriptAnalyzer -Path scripts -Recurse -Severity Error
+          if ($results) {
+            Write-Host "::warning::PSScriptAnalyzer reported $($results.Count) error-severity finding(s) (advisory):"
+            $results | Format-Table -AutoSize | Out-String | Write-Host
+          } else {
+            Write-Host "No PSScriptAnalyzer error-severity findings."
+          }
+          # Report-only: never fail the build on findings or setup issues.
+          exit 0
