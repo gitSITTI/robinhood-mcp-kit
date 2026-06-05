@@ -40,6 +40,8 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 - `docs/SECRETS.md` - what is and is not a secret, plus credential storage locations
 - `docs/SESSION-LOG.md` - sanitized setup session notes and troubleshooting
 - `docs/CHATGPT_APP.md` - Cloudflare-hosted ChatGPT app bridge setup
+- `docs/CLOUDFLARE_ONLY_RECOVERY.md` - Cloudflare-only recovery and reuse path while AWS login is unavailable
+- `docs/LOCAL_SECRET_SOURCE_OF_TRUTH.md` - local untracked secret bundle location and regeneration command
 - `configs/` - client-side MCP config examples
 - `scripts/` - PowerShell helpers for MCP install/startup checks and Cloudflare/AWS secret storage
 - `chatgpt-app/` - Cloudflare Worker MCP bridge for ChatGPT Apps

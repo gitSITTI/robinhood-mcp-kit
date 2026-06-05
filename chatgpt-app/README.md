@@ -15,10 +15,16 @@ orders.
 
 - `get_agentic_account`
 - `get_equity_quote`
+- `prepare_agentic_equity_order`
+- `place_confirmed_agentic_equity_order`
+- `run_no_trade_audit`
 - `get_crypto_quote`
 - `prepare_crypto_market_buy`
 - `place_confirmed_crypto_market_buy`
 - `render_dashboard`
+
+`place_confirmed_agentic_equity_order` requires the confirmation token returned
+by `prepare_agentic_equity_order`.
 
 `place_confirmed_crypto_market_buy` requires the confirmation token returned by
 `prepare_crypto_market_buy`. The prepare step checks the v1 non-fee endpoint and
@@ -65,5 +71,4 @@ https://robinhood-chatgpt-app.edgar-sosa553.workers.dev
 
 - Robinhood MCP OAuth access tokens expire. Use the sync script to refresh the Worker secret from local Codex credentials when needed.
 - The current Robinhood MCP tools are equities-focused. Crypto order tools use the separate Robinhood Crypto Trading API.
-- The deployed app currently identifies the Agentic account through Robinhood MCP, but portfolio detail may be empty through the Worker bridge until the upstream MCP response handling is tightened further.
 - Do not submit this as a public app until auth, privacy policy, support contact, and review-safe demo credentials are added.

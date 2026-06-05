@@ -50,6 +50,9 @@ to AWS Secrets Manager.
 Cursor, Claude, GitHub Actions, or other projects should pull from AWS Secrets
 Manager or Cloudflare secrets rather than copying credentials into repos.
 
+Until AWS is available, use Cloudflare as the source of truth. See
+`docs/CLOUDFLARE_ONLY_RECOVERY.md`.
+
 Expected JSON shape in AWS:
 
 ```json
@@ -93,9 +96,11 @@ provider before `robinhood/chatgpt-app/config` can be written.
 ## Safety Model
 
 - Read tools are marked read-only.
+- Agentic equity placement requires `prepare_agentic_equity_order` first.
+- `place_confirmed_agentic_equity_order` requires a confirmation token tied to the exact Agentic order.
 - Crypto placement requires `prepare_crypto_market_buy` first.
 - `place_confirmed_crypto_market_buy` requires a confirmation token tied to the exact symbol, quantity, side, and guard.
 - The default guard uses Robinhood Crypto v1 and requires zero buy spread unless explicitly disabled.
 - The current deployed Worker passes `tools/list` and read-only `get_crypto_quote`.
 - `prepare_crypto_market_buy` returns a confirmation token and does not place an order.
-- `get_agentic_account` identifies the Agentic account, but portfolio detail may be empty through the Worker bridge until upstream MCP response handling is improved.
+- `run_no_trade_audit` checks account, equity positions/orders, and crypto quote state without placing orders.

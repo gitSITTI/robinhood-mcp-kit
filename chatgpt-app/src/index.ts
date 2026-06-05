@@ -48,6 +48,65 @@ const tools = [
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true }
   },
   {
+    name: "prepare_agentic_equity_order",
+    title: "Prepare Agentic Equity Order",
+    description: "Use this to review a stock or ETF order for the Agentic brokerage account. This never places an order.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Uppercase stock or ETF ticker" },
+        side: { type: "string", enum: ["buy", "sell"] },
+        orderType: { type: "string", enum: ["market", "limit"], default: "market" },
+        quantity: { type: "string", description: "Share quantity, if share-based" },
+        dollarAmount: { type: "string", description: "Dollar amount, if dollar-based" },
+        limitPrice: { type: "string", description: "Required for limit orders" },
+        timeInForce: { type: "string", enum: ["gfd", "gtc"], default: "gfd" }
+      },
+      required: ["symbol", "side"],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
+  },
+  {
+    name: "place_confirmed_agentic_equity_order",
+    title: "Place Confirmed Agentic Equity Order",
+    description: "Use this only after the user explicitly confirms an Agentic equity order and provides the confirmation token.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string" },
+        side: { type: "string", enum: ["buy", "sell"] },
+        orderType: { type: "string", enum: ["market", "limit"], default: "market" },
+        quantity: { type: "string" },
+        dollarAmount: { type: "string" },
+        limitPrice: { type: "string" },
+        timeInForce: { type: "string", enum: ["gfd", "gtc"], default: "gfd" },
+        confirmationToken: { type: "string" }
+      },
+      required: ["symbol", "side", "confirmationToken"],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    _meta: {
+      "openai/toolInvocation/invoking": "Placing confirmed Agentic equity order",
+      "openai/toolInvocation/invoked": "Agentic equity order submitted"
+    }
+  },
+  {
+    name: "run_no_trade_audit",
+    title: "Run No-Trade Audit",
+    description: "Use this for a read-only audit of Agentic account status, equity orders, positions, and crypto quote/fee status. This never places orders.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cryptoSymbol: { type: "string", default: "USDC-USD" },
+        cryptoQuantity: { type: "string", default: "1" }
+      },
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }
+  },
+  {
     name: "get_crypto_quote",
     title: "Get Crypto Quote",
     description: "Use this when you need a read-only Robinhood Crypto best bid/ask and estimated buy price for a USD trading pair.",
@@ -170,6 +229,9 @@ async function callTool(name: string, args: Record<string, unknown>, env: Env) {
   }
   if (name === "get_agentic_account") return getAgenticAccount(env);
   if (name === "get_equity_quote") return getEquityQuote(env, requireString(args.symbol, "symbol").toUpperCase());
+  if (name === "prepare_agentic_equity_order") return prepareAgenticEquityOrder(env, args);
+  if (name === "place_confirmed_agentic_equity_order") return placeConfirmedAgenticEquityOrder(env, args);
+  if (name === "run_no_trade_audit") return runNoTradeAudit(env, args);
   if (name === "get_crypto_quote") return getCryptoQuote(env, normalizePair(args.symbol), requireString(args.quantity, "quantity"));
   if (name === "prepare_crypto_market_buy") {
     return prepareCryptoMarketBuy(env, normalizePair(args.symbol), requireString(args.quantity, "quantity"), args.requireZeroBuySpread !== false);
@@ -187,12 +249,7 @@ async function callTool(name: string, args: Record<string, unknown>, env: Env) {
 }
 
 async function getAgenticAccount(env: Env) {
-  const accounts = asRecord(await robinhoodMcpTool(env, "get_accounts", {}));
-  const accountData = asRecord(accounts.data);
-  const list = Array.isArray(accountData.accounts) ? accountData.accounts as Array<Record<string, unknown>> : [];
-  const agentic = list.find((account: Record<string, unknown>) => account.agentic_allowed === true);
-  if (!agentic) throw new Error("No agentic_allowed brokerage account was returned by Robinhood MCP.");
-  const accountNumber = String(agentic.account_number);
+  const { account: agentic, accountNumber } = await getAgenticAccountRecord(env);
   const portfolio = asRecord(await robinhoodMcpTool(env, "get_portfolio", { account_number: accountNumber }));
   const portfolioText = typeof portfolio.text === "string" ? tryParseJson(portfolio.text) : undefined;
   const portfolioData = asRecord(portfolio.data ?? asRecord(portfolioText).data ?? portfolioText);
@@ -209,12 +266,97 @@ async function getAgenticAccount(env: Env) {
   return toolJson("Agentic account summary loaded. Account numbers are masked.", summary);
 }
 
+async function getAgenticAccountRecord(env: Env) {
+  const accounts = asRecord(await robinhoodMcpTool(env, "get_accounts", {}));
+  const accountData = asRecord(accounts.data);
+  const list = Array.isArray(accountData.accounts) ? accountData.accounts as Array<Record<string, unknown>> : [];
+  const agentic = list.find((account: Record<string, unknown>) => account.agentic_allowed === true);
+  if (!agentic) throw new Error("No agentic_allowed brokerage account was returned by Robinhood MCP.");
+  const accountNumber = String(agentic.account_number);
+  return { account: agentic, accountNumber };
+}
+
 async function getEquityQuote(env: Env, symbol: string) {
   const [quote, tradability] = await Promise.all([
     robinhoodMcpTool(env, "get_equity_quotes", { symbols: [symbol] }),
     robinhoodMcpTool(env, "get_equity_tradability", { symbol })
   ]).then(([quoteResult, tradabilityResult]) => [asRecord(quoteResult), asRecord(tradabilityResult)]);
   return toolJson(`Loaded equity quote and tradability for ${symbol}.`, { symbol, quote: asRecord(quote.data), tradability: asRecord(tradability.data) });
+}
+
+async function prepareAgenticEquityOrder(env: Env, args: Record<string, unknown>) {
+  const { accountNumber } = await getAgenticAccountRecord(env);
+  const order = normalizeEquityOrderArgs(args, accountNumber);
+  const [quote, tradability, review] = await Promise.all([
+    robinhoodMcpTool(env, "get_equity_quotes", { symbols: [order.symbol] }),
+    robinhoodMcpTool(env, "get_equity_tradability", { symbol: order.symbol }),
+    robinhoodMcpTool(env, "review_equity_order", order)
+  ]).then(([quoteResult, tradabilityResult, reviewResult]) => [asRecord(quoteResult), asRecord(tradabilityResult), asRecord(reviewResult)]);
+  const confirmationToken = await makeConfirmationToken(env, stableOrderPayload(order));
+  return toolJson("Prepared Agentic equity order. No order was placed.", {
+    accountLast4: accountNumber.slice(-4),
+    order: redactAccountNumbers(order),
+    quote: asRecord(quote.data),
+    tradability: asRecord(tradability.data),
+    review,
+    confirmationToken,
+    instruction: "Only call place_confirmed_agentic_equity_order after the user explicitly confirms this exact order."
+  });
+}
+
+async function placeConfirmedAgenticEquityOrder(env: Env, args: Record<string, unknown>) {
+  const { accountNumber } = await getAgenticAccountRecord(env);
+  const order = normalizeEquityOrderArgs(args, accountNumber);
+  const confirmationToken = requireString(args.confirmationToken, "confirmationToken");
+  const expected = await makeConfirmationToken(env, stableOrderPayload(order));
+  if (confirmationToken !== expected) throw new Error("Confirmation token does not match the current Agentic equity order parameters.");
+  await robinhoodMcpTool(env, "review_equity_order", order);
+  const placed = await robinhoodMcpTool(env, "place_equity_order", order);
+  return toolJson("Submitted confirmed Agentic equity order.", {
+    accountLast4: accountNumber.slice(-4),
+    order: redactAccountNumbers(order),
+    result: placed
+  });
+}
+
+async function runNoTradeAudit(env: Env, args: Record<string, unknown>) {
+  const { accountNumber } = await getAgenticAccountRecord(env);
+  const cryptoSymbol = normalizePair(args.cryptoSymbol ?? "USDC-USD");
+  const cryptoQuantity = requireString(args.cryptoQuantity ?? "1", "cryptoQuantity");
+  const [agentic, positions, orders, cryptoQuote] = await Promise.all([
+    getAgenticAccount(env),
+    robinhoodMcpTool(env, "get_equity_positions", { account_number: accountNumber }),
+    robinhoodMcpTool(env, "get_equity_orders", { account_number: accountNumber }),
+    getCryptoQuoteData(env, cryptoSymbol, cryptoQuantity)
+  ]);
+  return toolJson("Completed no-trade audit. No orders were placed.", {
+    agentic: asRecord(agentic.structuredContent),
+    equityPositions: asRecord(positions).data ?? positions,
+    equityOrders: asRecord(orders).data ?? orders,
+    crypto: { symbol: cryptoSymbol, quantity: cryptoQuantity, quote: cryptoQuote }
+  });
+}
+
+function normalizeEquityOrderArgs(args: Record<string, unknown>, accountNumber: string) {
+  const symbol = requireString(args.symbol, "symbol").toUpperCase();
+  const side = requireString(args.side, "side").toLowerCase();
+  if (!["buy", "sell"].includes(side)) throw new Error("side must be buy or sell.");
+  const orderType = (typeof args.orderType === "string" ? args.orderType : "market").toLowerCase();
+  if (!["market", "limit"].includes(orderType)) throw new Error("orderType must be market or limit.");
+  const timeInForce = (typeof args.timeInForce === "string" ? args.timeInForce : "gfd").toLowerCase();
+  const order: Record<string, unknown> = { account_number: accountNumber, symbol, side, type: orderType, time_in_force: timeInForce };
+  if (args.quantity) order.quantity = requireString(args.quantity, "quantity");
+  if (args.dollarAmount) order.dollar_based_amount = requireString(args.dollarAmount, "dollarAmount");
+  if (!order.quantity && !order.dollar_based_amount) throw new Error("Provide quantity or dollarAmount.");
+  if (orderType === "limit") order.price = requireString(args.limitPrice, "limitPrice");
+  return order;
+}
+
+function stableOrderPayload(order: Record<string, unknown>): Record<string, string> {
+  const keys = Object.keys(order).sort();
+  const payload: Record<string, string> = {};
+  for (const key of keys) payload[key] = String(order[key]);
+  return payload;
 }
 
 async function getCryptoQuote(env: Env, symbol: string, quantity: string) {
@@ -283,7 +425,8 @@ async function robinhoodMcpTool(env: Env, name: string, args: Record<string, unk
   const rpc = parseMcpResponse(await response.text());
   if (rpc.error) throw new Error(rpc.error.message ?? `Robinhood MCP ${name} returned an error`);
   const firstText = rpc.result?.content?.[0]?.text;
-  const content = rpc.result?.structuredContent ?? tryParseJson(firstText) ?? { text: firstText ?? "" };
+  const parsedText = tryParseJson(firstText);
+  const content = rpc.result?.structuredContent ?? parsedText ?? { text: firstText ?? "" };
   return redactAccountNumbers(content);
 }
 
