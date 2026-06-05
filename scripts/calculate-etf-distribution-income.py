@@ -11,6 +11,9 @@ sale_date,note
 The script fetches distribution tables from StockAnalysis by default, caches
 them locally, and calculates only distributions whose ex-date is on or after
 the lot purchase date and on or before the optional sale/as-of dates.
+
+Validation input can contain broker-confirmed income rows:
+symbol,date,amount
 """
 
 from __future__ import annotations
@@ -51,6 +54,15 @@ class Distribution:
     record_date: dt.date | None
     pay_date: dt.date | None
     source_url: str
+
+
+@dataclass(frozen=True)
+class ActualIncome:
+    symbol: str
+    date: dt.date
+    amount: Decimal
+    source: str = ""
+    note: str = ""
 
 
 def money(value: Decimal) -> str:
@@ -100,6 +112,34 @@ def read_lots(path: Path) -> list[Lot]:
             )
         )
     return lots
+
+
+def read_actual_income_csv(path: Path, as_of: dt.date | None) -> list[ActualIncome]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    actual: list[ActualIncome] = []
+    for index, row in enumerate(rows, start=2):
+        symbol = (row.get("symbol") or "").strip().upper()
+        if not symbol:
+            raise ValueError(f"{path}:{index}: missing symbol")
+        income_date = parse_date(row.get("date") or row.get("pay_date") or row.get("activity_date"))
+        if income_date is None:
+            raise ValueError(f"{path}:{index}: missing date")
+        if as_of and income_date > as_of:
+            continue
+        amount_raw = row.get("amount") or row.get("net_amount") or row.get("income")
+        if not amount_raw:
+            raise ValueError(f"{path}:{index}: missing amount")
+        actual.append(
+            ActualIncome(
+                symbol=symbol,
+                date=income_date,
+                amount=parse_decimal(amount_raw),
+                source=(row.get("source") or row.get("type") or "").strip(),
+                note=(row.get("note") or row.get("description") or "").strip(),
+            )
+        )
+    return actual
 
 
 def cache_path(cache_dir: Path, symbol: str) -> Path:
@@ -251,6 +291,61 @@ def calculate(
     return summaries, payments
 
 
+def summarize_estimated_by_symbol(summaries: list[dict[str, str]]) -> dict[str, Decimal]:
+    totals: dict[str, Decimal] = {}
+    for row in summaries:
+        symbol = row["symbol"]
+        totals[symbol] = totals.get(symbol, Decimal("0")) + Decimal(row["estimated_income"])
+    return totals
+
+
+def summarize_actual_by_symbol(actual_income: list[ActualIncome], symbols: set[str]) -> dict[str, Decimal]:
+    totals: dict[str, Decimal] = {}
+    for row in actual_income:
+        if row.symbol not in symbols:
+            continue
+        totals[row.symbol] = totals.get(row.symbol, Decimal("0")) + row.amount
+    return totals
+
+
+def build_validation_rows(
+    summaries: list[dict[str, str]],
+    actual_income: list[ActualIncome],
+    tolerance: Decimal,
+) -> list[dict[str, str]]:
+    estimated = summarize_estimated_by_symbol(summaries)
+    actual = summarize_actual_by_symbol(actual_income, set(estimated))
+    rows: list[dict[str, str]] = []
+    for symbol in sorted(set(estimated) | set(actual)):
+        estimated_amount = estimated.get(symbol, Decimal("0"))
+        actual_amount = actual.get(symbol, Decimal("0"))
+        variance = estimated_amount - actual_amount
+        rows.append(
+            {
+                "symbol": symbol,
+                "estimated_income": money(estimated_amount),
+                "actual_income": money(actual_amount),
+                "variance_estimated_minus_actual": money(variance),
+                "absolute_variance": money(abs(variance)),
+                "within_tolerance": "yes" if abs(variance) <= tolerance else "no",
+            }
+        )
+    estimated_total = sum(estimated.values(), Decimal("0"))
+    actual_total = sum(actual.values(), Decimal("0"))
+    variance_total = estimated_total - actual_total
+    rows.append(
+        {
+            "symbol": "TOTAL",
+            "estimated_income": money(estimated_total),
+            "actual_income": money(actual_total),
+            "variance_estimated_minus_actual": money(variance_total),
+            "absolute_variance": money(abs(variance_total)),
+            "within_tolerance": "yes" if abs(variance_total) <= tolerance else "no",
+        }
+    )
+    return rows
+
+
 def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
@@ -262,10 +357,14 @@ def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
-def write_markdown(path: Path, summaries: list[dict[str, str]], payments: list[dict[str, str]], as_of: dt.date | None) -> None:
-    totals_by_symbol: dict[str, Decimal] = {}
-    for row in summaries:
-        totals_by_symbol[row["symbol"]] = totals_by_symbol.get(row["symbol"], Decimal("0")) + Decimal(row["estimated_income"])
+def write_markdown(
+    path: Path,
+    summaries: list[dict[str, str]],
+    payments: list[dict[str, str]],
+    as_of: dt.date | None,
+    validation_rows: list[dict[str, str]] | None = None,
+) -> None:
+    totals_by_symbol = summarize_estimated_by_symbol(summaries)
     total_income = sum(totals_by_symbol.values(), Decimal("0"))
     lines = [
         "# ETF Distribution Income Estimate",
@@ -296,6 +395,21 @@ def write_markdown(path: Path, summaries: list[dict[str, str]], payments: list[d
             f"| {row['lot_id']} | {row['symbol']} | {row['shares']} | {row['purchase_date']} | "
             f"{row['sale_date']} | {row['distributions_count']} | ${row['estimated_income']} |"
         )
+    if validation_rows:
+        lines.extend(
+            [
+                "",
+                "## Validation Against Actual Income",
+                "",
+                "| Symbol | Estimated | Actual | Variance | Within Tolerance |",
+                "|---|---:|---:|---:|---|",
+            ]
+        )
+        for row in validation_rows:
+            lines.append(
+                f"| {row['symbol']} | ${row['estimated_income']} | ${row['actual_income']} | "
+                f"${row['variance_estimated_minus_actual']} | {row['within_tolerance']} |"
+            )
     lines.extend(
         [
             "",
@@ -303,6 +417,7 @@ def write_markdown(path: Path, summaries: list[dict[str, str]], payments: list[d
             "",
             "- `etf-income-summary.csv` contains one row per lot.",
             "- `etf-income-payments.csv` contains one row per eligible distribution payment.",
+            "- `etf-income-validation.csv` compares estimates to broker-confirmed income when `--actual-income` is provided.",
             "",
         ]
     )
@@ -316,6 +431,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--cache-dir", type=Path, default=Path(".cache/etf-distributions"), help="HTML cache directory.")
     parser.add_argument("--output-dir", type=Path, default=Path("reports/etf-income"), help="Report output directory.")
     parser.add_argument("--as-of", type=str, help="Only include ex-dates on or before this date.")
+    parser.add_argument("--actual-income", type=Path, help="Optional broker/account activity CSV with symbol,date,amount rows for validation.")
+    parser.add_argument("--validation-tolerance", type=Decimal, default=Decimal("0.05"), help="Allowed per-symbol and total variance before validation fails.")
+    parser.add_argument("--fail-on-validation-mismatch", action="store_true", help="Exit non-zero if validation variance exceeds tolerance.")
     parser.add_argument("--refresh", action="store_true", help="Refresh cached online distribution pages.")
     args = parser.parse_args(argv)
 
@@ -323,15 +441,21 @@ def main(argv: list[str]) -> int:
     as_of = parse_date(args.as_of) if args.as_of else None
     distributions = get_distributions((lot.symbol for lot in lots), args.cache_dir, args.refresh, args.distributions)
     summaries, payments = calculate(lots, distributions, as_of)
+    actual_income = read_actual_income_csv(args.actual_income, as_of) if args.actual_income else []
+    validation_rows = build_validation_rows(summaries, actual_income, args.validation_tolerance) if args.actual_income else []
 
     summary_csv = args.output_dir / "etf-income-summary.csv"
     payments_csv = args.output_dir / "etf-income-payments.csv"
+    validation_csv = args.output_dir / "etf-income-validation.csv"
     markdown = args.output_dir / "etf-income-report.md"
     write_csv(summary_csv, summaries)
     write_csv(payments_csv, payments)
-    write_markdown(markdown, summaries, payments, as_of)
+    if args.actual_income:
+        write_csv(validation_csv, validation_rows)
+    write_markdown(markdown, summaries, payments, as_of, validation_rows)
 
     total_income = sum((Decimal(row["estimated_income"]) for row in summaries), Decimal("0"))
+    validation_failed = any(row["within_tolerance"] == "no" for row in validation_rows)
     print(
         json.dumps(
             {
@@ -339,13 +463,18 @@ def main(argv: list[str]) -> int:
                 "symbols": sorted({lot.symbol for lot in lots}),
                 "payments": len(payments),
                 "estimated_income": money(total_income),
+                "actual_income": validation_rows[-1]["actual_income"] if validation_rows else None,
+                "validation_failed": validation_failed if validation_rows else None,
                 "summary_csv": str(summary_csv),
                 "payments_csv": str(payments_csv),
+                "validation_csv": str(validation_csv) if args.actual_income else None,
                 "markdown": str(markdown),
             },
             indent=2,
         )
     )
+    if validation_failed and args.fail_on_validation_mismatch:
+        return 2
     return 0
 
 

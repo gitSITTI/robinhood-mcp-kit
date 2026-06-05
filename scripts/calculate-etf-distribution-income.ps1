@@ -4,6 +4,9 @@ param(
   [string]$OutputDir = "reports/etf-income",
   [string]$AsOf,
   [string]$Distributions,
+  [string]$ActualIncome,
+  [decimal]$ValidationTolerance = 0.05,
+  [switch]$FailOnValidationMismatch,
   [switch]$Refresh
 )
 
@@ -21,6 +24,15 @@ if ($AsOf) {
 
 if ($Distributions) {
   $argsList += @("--distributions", $Distributions)
+}
+
+if ($ActualIncome) {
+  $argsList += @("--actual-income", $ActualIncome)
+  $argsList += @("--validation-tolerance", $ValidationTolerance.ToString([Globalization.CultureInfo]::InvariantCulture))
+}
+
+if ($FailOnValidationMismatch) {
+  $argsList += "--fail-on-validation-mismatch"
 }
 
 if ($Refresh) {

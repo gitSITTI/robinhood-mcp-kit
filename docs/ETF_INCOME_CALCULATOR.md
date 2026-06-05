@@ -46,6 +46,38 @@ Output files:
 - `reports/etf-income/etf-income-report.md`
 - `reports/etf-income/etf-income-summary.csv`
 - `reports/etf-income/etf-income-payments.csv`
+- `reports/etf-income/etf-income-validation.csv` when validation is enabled
+
+## Validate Against Actual Income
+
+Use a broker/account activity export to validate the public-table estimate
+against real cash income. The validation CSV should contain:
+
+```csv
+symbol,date,amount,source,note
+YMAX,2026-06-04,35.14,Robinhood activity,paid ETF distribution
+```
+
+Accepted date columns are `date`, `pay_date`, or `activity_date`. Accepted
+amount columns are `amount`, `net_amount`, or `income`.
+
+Run:
+
+```powershell
+.\scripts\calculate-etf-distribution-income.ps1 `
+  -Lots .\my-joint-account-lots.local.csv `
+  -ActualIncome .\my-joint-account-income.local.csv `
+  -OutputDir .\reports\joint-etf-income `
+  -AsOf 2026-06-05 `
+  -ValidationTolerance 0.05 `
+  -FailOnValidationMismatch `
+  -Refresh
+```
+
+The script writes `etf-income-validation.csv` with estimated income, actual
+income, variance, absolute variance, and whether each symbol plus the total is
+within tolerance. Use `-FailOnValidationMismatch` in automation so mismatches
+fail loudly.
 
 ## Local Distribution Override
 

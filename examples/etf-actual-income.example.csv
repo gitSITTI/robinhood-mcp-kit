@@ -1,0 +1,4 @@
+symbol,date,amount,source,note
+YMAX,2026-01-08,0.88,broker-example,example validation row
+YMAX,2026-01-15,0.82,broker-example,example validation row
+NVDY,2026-03-03,1.00,broker-example,example validation row
