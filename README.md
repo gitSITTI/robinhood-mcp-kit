@@ -79,3 +79,17 @@ claude mcp add robinhood-trading --transport http --scope user https://agent.rob
 
 Then authenticate each server. Claude starts the OAuth flow automatically on first use.
 See `docs/SETUP.md` for full instructions and `docs/SESSION-LOG.md` for troubleshooting.
+
+## Operations & Planning
+
+- `docs/runbooks/` — deploy the Worker, rotate secrets / refresh the OAuth
+  token, enable inbound `/mcp` auth, and **AGENT_HANDOFF.md** (owner-only
+  tasks written so any coding agent can execute them).
+- `scripts/smoke-test-mcp.sh <worker-url> [secret]` — post-deploy health check.
+- `BACKLOG.md` — ticket registry, mirrored to GitHub issues.
+- `docs/EXPANSION.md` — Firebase / Cloudflare free tier / sosaclaw plan.
+- Worker bridge tools (v0.2.0): `get_agentic_account`, `get_equity_quote`,
+  `prepare_agentic_equity_order`, `place_confirmed_agentic_equity_order`,
+  `cancel_equity_order`, `run_no_trade_audit`, `get_crypto_quote`,
+  `get_crypto_holdings`, `prepare_crypto_market_buy`,
+  `place_confirmed_crypto_market_buy`, `render_dashboard`.

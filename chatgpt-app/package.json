@@ -1,13 +1,14 @@
 {
   "name": "robinhood-chatgpt-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "tsc --noEmit",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "test": "vitest run"
   },
   "dependencies": {
     "@noble/curves": "^1.9.7",
@@ -16,6 +17,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260603.0",
     "typescript": "^5.9.3",
+    "vitest": "^4.1.9",
     "wrangler": "^4.94.0"
   }
 }

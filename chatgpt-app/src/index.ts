@@ -1,4 +1,35 @@
+// Robinhood MCP bridge Worker (Cloudflare).
+//
+// This file is the I/O layer only: routing, upstream fetches (Robinhood MCP +
+// Robinhood Crypto API), and tool dispatch. All safety-critical pure logic
+// (order normalization, confirmation tokens with expiry, zero-spread guard,
+// idempotent client order IDs, inbound auth, redaction) lives in ./lib.ts and
+// is unit-tested in ../test/lib.test.ts.
+//
+// Trade-safety invariant (do not weaken): every order flow is
+//   prepare_* (never places, returns confirmation token)
+//     -> explicit user confirmation
+//       -> place_confirmed_* (verifies token + re-checks guards, then places)
+
 import { ed25519 } from "@noble/curves/ed25519";
+import type { JsonRpcRequest } from "./lib";
+import {
+  asRecord,
+  base64ToBytes,
+  bytesToBase64,
+  deriveClientOrderId,
+  enforceZeroBuySpread,
+  isAuthorizedMcpRequest,
+  makeConfirmationToken,
+  normalizeEquityOrderArgs,
+  normalizePair,
+  parseMcpResponse,
+  redactAccountNumbers,
+  requireString,
+  stableOrderPayload,
+  tryParseJson,
+  verifyConfirmationToken
+} from "./lib";
 
 type Env = {
   ROBINHOOD_MCP_TRADING_URL: string;
@@ -9,18 +40,15 @@ type Env = {
   ROBINHOOD_CRYPTO_TRADE_API_KEY?: string;
   ROBINHOOD_CRYPTO_TRADE_PRIVATE_KEY_BASE64?: string;
   APP_SHARED_SECRET?: string;
-};
-
-type JsonRpcRequest = {
-  jsonrpc: "2.0";
-  id?: string | number | null;
-  method: string;
-  params?: Record<string, unknown>;
+  // Set to "true" to require inbound auth on /mcp (Bearer APP_SHARED_SECRET
+  // header, or path secret /mcp/<APP_SHARED_SECRET> for URL-only connectors).
+  // See docs/runbooks/security-hardening.md before flipping this on.
+  MCP_REQUIRE_AUTH?: string;
 };
 
 const serverInfo = {
   name: "robinhood-chatgpt-app",
-  version: "0.1.0"
+  version: "0.2.0"
 };
 
 const tools = [
@@ -70,7 +98,7 @@ const tools = [
   {
     name: "place_confirmed_agentic_equity_order",
     title: "Place Confirmed Agentic Equity Order",
-    description: "Use this only after the user explicitly confirms an Agentic equity order and provides the confirmation token.",
+    description: "Use this only after the user explicitly confirms an Agentic equity order and provides the confirmation token. Tokens expire after 10 minutes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -93,9 +121,25 @@ const tools = [
     }
   },
   {
+    name: "cancel_equity_order",
+    title: "Cancel Equity Order",
+    description: "Use this to cancel an open Agentic equity order by its order id. Cancelling is corrective and requires no confirmation token.",
+    inputSchema: {
+      type: "object",
+      properties: { orderId: { type: "string", description: "The equity order id to cancel, from get_equity_orders / run_no_trade_audit output" } },
+      required: ["orderId"],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    _meta: {
+      "openai/toolInvocation/invoking": "Cancelling equity order",
+      "openai/toolInvocation/invoked": "Equity order cancel requested"
+    }
+  },
+  {
     name: "run_no_trade_audit",
     title: "Run No-Trade Audit",
-    description: "Use this for a read-only audit of Agentic account status, equity orders, positions, and crypto quote/fee status. This never places orders.",
+    description: "Use this for a read-only audit of Agentic account status, equity orders, positions, crypto holdings, and crypto quote/fee status. This never places orders.",
     inputSchema: {
       type: "object",
       properties: {
@@ -122,6 +166,17 @@ const tools = [
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true }
   },
   {
+    name: "get_crypto_holdings",
+    title: "Get Crypto Holdings",
+    description: "Use this when you need the read-only list of Robinhood Crypto holdings (asset codes and quantities).",
+    inputSchema: {
+      type: "object",
+      properties: { assetCode: { type: "string", description: "Optional single asset code filter, e.g. BTC or USDC" } },
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true }
+  },
+  {
     name: "prepare_crypto_market_buy",
     title: "Prepare Crypto Market Buy",
     description: "Use this when the user asks to prepare a crypto market buy. This does not place the order; it returns a confirmation token and fee/spread guard result.",
@@ -140,7 +195,7 @@ const tools = [
   {
     name: "place_confirmed_crypto_market_buy",
     title: "Place Confirmed Crypto Market Buy",
-    description: "Use this only after the user explicitly confirms the prepared crypto market buy and provides the confirmation token.",
+    description: "Use this only after the user explicitly confirms the prepared crypto market buy and provides the confirmation token. Tokens expire after 10 minutes.",
     inputSchema: {
       type: "object",
       properties: {
@@ -173,7 +228,18 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/") return json({ ok: true, serverInfo, endpoints: ["/mcp", "/widget"] });
     if (url.pathname === "/widget") return widgetResponse();
-    if (url.pathname === "/mcp") return handleMcp(request, env);
+    // /mcp and /mcp/<path-secret> both route to the MCP handler; the path
+    // secret form exists for connectors that cannot send custom headers.
+    if (url.pathname === "/mcp" || url.pathname.startsWith("/mcp/")) {
+      const authorized = isAuthorizedMcpRequest({
+        requireAuth: env.MCP_REQUIRE_AUTH === "true",
+        sharedSecret: env.APP_SHARED_SECRET,
+        authHeader: request.headers.get("Authorization"),
+        pathname: url.pathname
+      });
+      if (!authorized) return json({ error: "Unauthorized" }, 401);
+      return handleMcp(request, env);
+    }
     return new Response("Not found", { status: 404 });
   }
 };
@@ -231,8 +297,10 @@ async function callTool(name: string, args: Record<string, unknown>, env: Env) {
   if (name === "get_equity_quote") return getEquityQuote(env, requireString(args.symbol, "symbol").toUpperCase());
   if (name === "prepare_agentic_equity_order") return prepareAgenticEquityOrder(env, args);
   if (name === "place_confirmed_agentic_equity_order") return placeConfirmedAgenticEquityOrder(env, args);
+  if (name === "cancel_equity_order") return cancelEquityOrder(env, requireString(args.orderId, "orderId"));
   if (name === "run_no_trade_audit") return runNoTradeAudit(env, args);
   if (name === "get_crypto_quote") return getCryptoQuote(env, normalizePair(args.symbol), requireString(args.quantity, "quantity"));
+  if (name === "get_crypto_holdings") return getCryptoHoldings(env, typeof args.assetCode === "string" ? args.assetCode.toUpperCase() : undefined);
   if (name === "prepare_crypto_market_buy") {
     return prepareCryptoMarketBuy(env, normalizePair(args.symbol), requireString(args.quantity, "quantity"), args.requireZeroBuySpread !== false);
   }
@@ -292,7 +360,7 @@ async function prepareAgenticEquityOrder(env: Env, args: Record<string, unknown>
     robinhoodMcpTool(env, "get_equity_tradability", { symbol: order.symbol }),
     robinhoodMcpTool(env, "review_equity_order", order)
   ]).then(([quoteResult, tradabilityResult, reviewResult]) => [asRecord(quoteResult), asRecord(tradabilityResult), asRecord(reviewResult)]);
-  const confirmationToken = await makeConfirmationToken(env, stableOrderPayload(order));
+  const confirmationToken = await makeConfirmationToken(appSecret(env), stableOrderPayload(order), Date.now());
   return toolJson("Prepared Agentic equity order. No order was placed.", {
     accountLast4: accountNumber.slice(-4),
     order: redactAccountNumbers(order),
@@ -300,7 +368,7 @@ async function prepareAgenticEquityOrder(env: Env, args: Record<string, unknown>
     tradability: asRecord(tradability.data),
     review,
     confirmationToken,
-    instruction: "Only call place_confirmed_agentic_equity_order after the user explicitly confirms this exact order."
+    instruction: "Only call place_confirmed_agentic_equity_order after the user explicitly confirms this exact order. The token expires in 10 minutes."
   });
 }
 
@@ -308,8 +376,7 @@ async function placeConfirmedAgenticEquityOrder(env: Env, args: Record<string, u
   const { accountNumber } = await getAgenticAccountRecord(env);
   const order = normalizeEquityOrderArgs(args, accountNumber);
   const confirmationToken = requireString(args.confirmationToken, "confirmationToken");
-  const expected = await makeConfirmationToken(env, stableOrderPayload(order));
-  if (confirmationToken !== expected) throw new Error("Confirmation token does not match the current Agentic equity order parameters.");
+  await verifyConfirmationToken(appSecret(env), stableOrderPayload(order), confirmationToken, Date.now());
   await robinhoodMcpTool(env, "review_equity_order", order);
   const placed = await robinhoodMcpTool(env, "place_equity_order", order);
   return toolJson("Submitted confirmed Agentic equity order.", {
@@ -319,59 +386,56 @@ async function placeConfirmedAgenticEquityOrder(env: Env, args: Record<string, u
   });
 }
 
+async function cancelEquityOrder(env: Env, orderId: string) {
+  const { accountNumber } = await getAgenticAccountRecord(env);
+  // NOTE for maintainers: the argument names for the upstream cancel tool are
+  // taken from the documented tool list (README "Trading" tools) and mirror
+  // the place/review argument style. If the live MCP rejects them, check the
+  // upstream schema via tools/list with a live token — tracked in BACKLOG.md.
+  const result = await robinhoodMcpTool(env, "cancel_equity_order", { account_number: accountNumber, order_id: orderId });
+  return toolJson(`Requested cancel for equity order ${orderId}.`, {
+    accountLast4: accountNumber.slice(-4),
+    orderId,
+    result
+  });
+}
+
 async function runNoTradeAudit(env: Env, args: Record<string, unknown>) {
   const { accountNumber } = await getAgenticAccountRecord(env);
   const cryptoSymbol = normalizePair(args.cryptoSymbol ?? "USDC-USD");
   const cryptoQuantity = requireString(args.cryptoQuantity ?? "1", "cryptoQuantity");
-  const [agentic, positions, orders, cryptoQuote] = await Promise.all([
+  const [agentic, positions, orders, cryptoQuote, cryptoHoldings] = await Promise.all([
     getAgenticAccount(env),
     robinhoodMcpTool(env, "get_equity_positions", { account_number: accountNumber }),
     robinhoodMcpTool(env, "get_equity_orders", { account_number: accountNumber }),
-    getCryptoQuoteData(env, cryptoSymbol, cryptoQuantity)
+    getCryptoQuoteData(env, cryptoSymbol, cryptoQuantity),
+    cryptoGet(env, "read", "/api/v1/crypto/trading/holdings/").catch((error: unknown) => ({
+      unavailable: error instanceof Error ? error.message : String(error)
+    }))
   ]);
   return toolJson("Completed no-trade audit. No orders were placed.", {
     agentic: asRecord(agentic.structuredContent),
     equityPositions: asRecord(positions).data ?? positions,
     equityOrders: asRecord(orders).data ?? orders,
-    crypto: { symbol: cryptoSymbol, quantity: cryptoQuantity, quote: cryptoQuote }
+    crypto: { symbol: cryptoSymbol, quantity: cryptoQuantity, quote: cryptoQuote, holdings: cryptoHoldings }
   });
 }
 
-function normalizeEquityOrderArgs(args: Record<string, unknown>, accountNumber: string) {
-  const symbol = requireString(args.symbol, "symbol").toUpperCase();
-  const side = requireString(args.side, "side").toLowerCase();
-  if (!["buy", "sell"].includes(side)) throw new Error("side must be buy or sell.");
-  const orderType = (typeof args.orderType === "string" ? args.orderType : "market").toLowerCase();
-  if (!["market", "limit"].includes(orderType)) throw new Error("orderType must be market or limit.");
-  const timeInForce = (typeof args.timeInForce === "string" ? args.timeInForce : "gfd").toLowerCase();
-  const order: Record<string, unknown> = { account_number: accountNumber, symbol, side, type: orderType, time_in_force: timeInForce };
-  if (args.quantity) order.quantity = requireString(args.quantity, "quantity");
-  if (args.dollarAmount) order.dollar_based_amount = requireString(args.dollarAmount, "dollarAmount");
-  if (!order.quantity && !order.dollar_based_amount) throw new Error("Provide quantity or dollarAmount.");
-  if (orderType === "limit") order.price = requireString(args.limitPrice, "limitPrice");
-  return order;
-}
-
-function stableOrderPayload(order: Record<string, unknown>): Record<string, string> {
-  const keys = Object.keys(order).sort();
-  const payload: Record<string, string> = {};
-  for (const key of keys) payload[key] = String(order[key]);
-  return payload;
-}
-
 async function getCryptoQuote(env: Env, symbol: string, quantity: string) {
-  const [pair, best, estimate] = await Promise.all([
-    cryptoGet(env, "read", `/api/v1/crypto/trading/trading_pairs/?symbol=${encodeURIComponent(symbol)}`),
-    cryptoGet(env, "read", `/api/v1/crypto/marketdata/best_bid_ask/?symbol=${encodeURIComponent(symbol)}`),
-    cryptoGet(env, "read", `/api/v1/crypto/marketdata/estimated_price/?symbol=${encodeURIComponent(symbol)}&side=ask&quantity=${encodeURIComponent(quantity)}`)
-  ]);
-  return toolJson(`Loaded crypto quote for ${symbol}.`, { symbol, quantity, pair, bestBidAsk: best, estimatedAsk: estimate });
+  const quote = await getCryptoQuoteData(env, symbol, quantity);
+  return toolJson(`Loaded crypto quote for ${symbol}.`, { symbol, quantity, pair: quote.pair, bestBidAsk: quote.bestBidAsk, estimatedAsk: quote.estimatedAsk });
+}
+
+async function getCryptoHoldings(env: Env, assetCode?: string) {
+  const query = assetCode ? `?asset_code=${encodeURIComponent(assetCode)}` : "";
+  const holdings = await cryptoGet(env, "read", `/api/v1/crypto/trading/holdings/${query}`);
+  return toolJson(assetCode ? `Loaded crypto holdings for ${assetCode}.` : "Loaded crypto holdings.", { assetCode: assetCode ?? null, holdings });
 }
 
 async function prepareCryptoMarketBuy(env: Env, symbol: string, quantity: string, requireZeroBuySpread: boolean) {
   const quote = await getCryptoQuoteData(env, symbol, quantity);
   enforceZeroBuySpread(quote.bestBidAsk, requireZeroBuySpread);
-  const confirmationToken = await makeConfirmationToken(env, { symbol, quantity, side: "buy", type: "market", guard: "v1-zero-buy-spread" });
+  const confirmationToken = await makeConfirmationToken(appSecret(env), cryptoOrderPayload(symbol, quantity), Date.now());
   return toolJson("Prepared crypto market buy. No order was placed.", {
     action: "buy",
     symbol,
@@ -379,23 +443,33 @@ async function prepareCryptoMarketBuy(env: Env, symbol: string, quantity: string
     requireZeroBuySpread,
     quote,
     confirmationToken,
-    instruction: "Only call place_confirmed_crypto_market_buy after the user explicitly confirms this exact order."
+    instruction: "Only call place_confirmed_crypto_market_buy after the user explicitly confirms this exact order. The token expires in 10 minutes."
   });
 }
 
 async function placeConfirmedCryptoMarketBuy(env: Env, symbol: string, quantity: string, confirmationToken: string, requireZeroBuySpread: boolean) {
-  const expected = await makeConfirmationToken(env, { symbol, quantity, side: "buy", type: "market", guard: "v1-zero-buy-spread" });
-  if (confirmationToken !== expected) throw new Error("Confirmation token does not match the current order parameters.");
+  await verifyConfirmationToken(appSecret(env), cryptoOrderPayload(symbol, quantity), confirmationToken, Date.now());
   const quote = await getCryptoQuoteData(env, symbol, quantity);
   enforceZeroBuySpread(quote.bestBidAsk, requireZeroBuySpread);
   const order = await cryptoPost(env, "trade", "/api/v1/crypto/trading/orders/", {
-    client_order_id: crypto.randomUUID(),
+    // Deterministic per confirmation token: a timed-out placement retried with
+    // the same confirmation reuses the same id, so the exchange deduplicates
+    // instead of double-buying.
+    client_order_id: await deriveClientOrderId(confirmationToken),
     side: "buy",
     type: "market",
     symbol,
     market_order_config: { asset_quantity: quantity }
   });
   return toolJson("Submitted confirmed crypto market buy through the v1 non-fee endpoint.", { symbol, quantity, order: redactAccountNumbers(order) });
+}
+
+function cryptoOrderPayload(symbol: string, quantity: string): Record<string, string> {
+  return { symbol, quantity, side: "buy", type: "market", guard: "v1-zero-buy-spread" };
+}
+
+function appSecret(env: Env): string {
+  return env.APP_SHARED_SECRET || "local-dev-unsafe-secret";
 }
 
 async function getCryptoQuoteData(env: Env, symbol: string, quantity: string) {
@@ -466,29 +540,6 @@ function signEd25519(privateKeyBase64: string, message: string) {
   return bytesToBase64(signature);
 }
 
-async function makeConfirmationToken(env: Env, payload: Record<string, string>) {
-  const secret = env.APP_SHARED_SECRET || "local-dev-unsafe-secret";
-  const data = new TextEncoder().encode(JSON.stringify(payload));
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  return bytesToBase64(new Uint8Array(await crypto.subtle.sign("HMAC", key, data))).slice(0, 32);
-}
-
-function enforceZeroBuySpread(bestBidAsk: unknown, enabled: boolean) {
-  if (!enabled) return;
-  const row = (bestBidAsk as { results?: Array<Record<string, unknown>> })?.results?.[0];
-  if (!row) throw new Error("No best bid/ask row returned for zero-spread guard.");
-  const buySpread = String(row.buy_spread ?? "");
-  if (!["0", "0.0", "0.00", "0.0000"].includes(buySpread)) throw new Error(`Zero buy-spread guard failed; buy_spread=${buySpread}`);
-}
-
-function parseMcpResponse(text: string) {
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{")) return JSON.parse(trimmed);
-  const line = trimmed.split(/\r?\n/).find((item) => item.startsWith("data: "));
-  if (!line) throw new Error(`No MCP data line in response: ${trimmed.slice(0, 120)}`);
-  return JSON.parse(line.slice(6));
-}
-
 function widgetResponse() {
   return new Response(widgetHtml(), {
     headers: {
@@ -531,13 +582,13 @@ function widgetHtml() {
         <div class="tile"><div class="label">Crypto</div><div class="value">API guarded</div></div>
         <div class="tile"><div class="label">Orders</div><div class="value">Confirm first</div></div>
       </div>
-      <p style="margin-top:18px">Suggested prompt: <code>Render dashboard, check Agentic account, then quote USDC-USD for quantity 5.</code></p>
+      <p style="margin-top:18px">Suggested prompt: <code>Render dashboard, run the no-trade audit, then quote USDC-USD for quantity 5.</code></p>
     </section>
   </main>
   <script>
     document.getElementById("ask").addEventListener("click", async () => {
       if (window.openai?.sendFollowUpMessage) {
-        await window.openai.sendFollowUpMessage({ prompt: "Check my Agentic account status and render the Robinhood dashboard." });
+        await window.openai.sendFollowUpMessage({ prompt: "Run the no-trade audit and render the Robinhood dashboard." });
       }
     });
   </script>
@@ -566,50 +617,4 @@ function json(data: unknown, status = 200) {
     status,
     headers: { "Content-Type": "application/json; charset=utf-8" }
   });
-}
-
-function requireString(value: unknown, name: string) {
-  if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required.`);
-  return value.trim();
-}
-
-function normalizePair(value: unknown) {
-  return requireString(value, "symbol").toUpperCase();
-}
-
-function tryParseJson(value: unknown) {
-  if (typeof value !== "string") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-}
-
-function redactAccountNumbers(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactAccountNumbers);
-  if (value && typeof value === "object") {
-    const output: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) {
-      if (key.toLowerCase().includes("account_number") && typeof item === "string") output[key] = `••••${item.slice(-4)}`;
-      else output[key] = redactAccountNumbers(item);
-    }
-    return output;
-  }
-  return value;
-}
-
-function base64ToBytes(value: string) {
-  const binary = atob(value);
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
-}
-
-function bytesToBase64(bytes: Uint8Array) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
 }

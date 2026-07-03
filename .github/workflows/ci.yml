@@ -2,7 +2,8 @@
 #
 # WHAT THIS GATES (for any human or AI agent reading this):
 #   worker     : the Cloudflare Worker in chatgpt-app/ must type-check
-#                (`npm run check` == `tsc --noEmit`).  BLOCKING.
+#                (`npm run check` == `tsc --noEmit`) AND pass its vitest unit
+#                tests (`npm test`, safety logic in src/lib.ts).  BLOCKING.
 #   json       : every tracked .json file must parse (evals, configs, package
 #                manifests).  BLOCKING.  (.jsonc is skipped — it allows comments.)
 #   powershell : PSScriptAnalyzer over scripts/*.ps1.  ADVISORY (non-blocking) —
@@ -40,6 +41,8 @@ jobs:
         run: npm ci
       - name: Type-check (tsc --noEmit)
         run: npm run check
+      - name: Unit tests (vitest) — blocking
+        run: npm test
 
   json-validate:
     name: Validate tracked JSON
