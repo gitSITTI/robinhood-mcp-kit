@@ -6,8 +6,9 @@ orders.
 
 ## Shape
 
-- `src/index.ts` exposes `/mcp` and `/widget` from one Cloudflare Worker.
+- `src/index.ts` exposes `/mcp`, `/widget`, and `/refresh-token` from one Cloudflare Worker.
 - Equity tools call the Robinhood trading MCP when a fresh MCP OAuth access token is stored as a Worker secret.
+- `src/refresh.ts` + the `scheduled` handler refresh that access token on a cron, gated by `TOKEN_REFRESH_ENABLED`. See [`docs/runbooks/rotate-secrets.md`](../docs/runbooks/rotate-secrets.md).
 - Crypto tools call the official Robinhood Crypto Trading API with Ed25519 API credentials.
 - Secrets are supplied by Cloudflare Worker secrets and can also be stored in AWS Secrets Manager for reuse from Cursor, Claude, GitHub Actions, or other projects.
 
@@ -87,6 +88,6 @@ https://robinhood-chatgpt-app.edgar-sosa553.workers.dev
 
 ## Important Limitations
 
-- Robinhood MCP OAuth access tokens expire. Use the sync script to refresh the Worker secret from local Codex credentials when needed.
+- Robinhood MCP OAuth access tokens expire. The preferred path is the automated cron refresh in [`docs/runbooks/rotate-secrets.md §A`](../docs/runbooks/rotate-secrets.md); §B in the same runbook keeps the manual sync-script fallback for on-call use.
 - The current Robinhood MCP tools are equities-focused. Crypto order tools use the separate Robinhood Crypto Trading API.
 - Do not submit this as a public app until auth, privacy policy, support contact, and review-safe demo credentials are added.

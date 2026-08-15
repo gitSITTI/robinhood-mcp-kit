@@ -38,6 +38,30 @@ fix.
 - Replaced with `deriveIdempotentClientOrderId`: HMAC-SHA256 over a
   canonical order payload, formatted as a UUIDv4.
 
+## Manual `wrangler secret put` was the only path to refresh MCP OAuth tokens
+
+- After the Robinhood MCP access token expired, on-call had to run
+  `codex mcp login robinhood-trading` + `wrangler secret put` by hand,
+  interrupting trading while the operator rotated secrets.
+- The Worker never called the OAuth token endpoint itself, and no cron
+  hook existed to trigger a refresh on schedule.
+- Added `src/refresh.ts` (`shouldRefreshAccessToken`, `callTokenEndpoint`,
+  `putWorkerSecret`, `runScheduledRefresh`) plus a `scheduled` handler
+  and `POST /refresh-token`; gated by `TOKEN_REFRESH_ENABLED` so the
+  code is credential-free by default. See
+  `docs/runbooks/rotate-secrets.md §A`.
+
+## TypeScript build refused `.ts` extension in imports
+
+- `npm run check` failed with `TS5097: An import path can only end
+  with a '.ts' extension when 'allowImportingTsExtensions' is enabled`
+  after `src/index.ts` imported `./refresh.ts`.
+- The tsconfig used `moduleResolution: Bundler` but did not enable the
+  matching import-extension flag, while the test runner requires the
+  `.ts` extension for Node's type stripping.
+- Added `"allowImportingTsExtensions": true` to `chatgpt-app/tsconfig.json`;
+  the emit was already suppressed via `noEmit`.
+
 ## Node type-stripping failed on unmarked files
 
 - `node --test` for `.ts` tests errored until `--experimental-strip-types`

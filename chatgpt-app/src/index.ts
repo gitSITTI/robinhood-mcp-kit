@@ -1,6 +1,7 @@
 import { ed25519 } from "@noble/curves/ed25519";
+import { type RefreshEnv, type RefreshOutcome, runScheduledRefresh } from "./refresh.ts";
 
-type Env = {
+type Env = RefreshEnv & {
   ROBINHOOD_MCP_TRADING_URL: string;
   ROBINHOOD_MCP_TRADING_ACCESS_TOKEN?: string;
   ROBINHOOD_CRYPTO_API_BASE: string;
@@ -11,6 +12,9 @@ type Env = {
   APP_SHARED_SECRET?: string;
   MCP_REQUIRE_AUTH?: string;
 };
+
+type ScheduledLike = { scheduledTime?: number; cron?: string };
+type CtxLike = { waitUntil?: (promise: Promise<unknown>) => void };
 
 type JsonRpcRequest = {
   jsonrpc: "2.0";
@@ -203,12 +207,60 @@ export const tools = [
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/") return json({ ok: true, serverInfo, endpoints: ["/mcp", "/widget"] });
+    if (url.pathname === "/") return json({ ok: true, serverInfo, endpoints: ["/mcp", "/widget", "/refresh-token"] });
     if (url.pathname === "/widget") return widgetResponse();
     if (url.pathname === "/mcp") return handleMcp(request, env);
+    if (url.pathname === "/refresh-token") return handleRefreshToken(request, env);
     return new Response("Not found", { status: 404 });
+  },
+  async scheduled(event: ScheduledLike, env: Env, ctx: CtxLike): Promise<void> {
+    const task = runScheduledRefresh(env, { fetch: globalThis.fetch }).then((outcome) => {
+      logRefreshOutcome(outcome, event.cron ?? "unknown");
+      return outcome;
+    });
+    if (ctx.waitUntil) ctx.waitUntil(task);
+    else await task;
   }
 };
+
+async function handleRefreshToken(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  if (!env.APP_SHARED_SECRET) {
+    return json({ error: "refresh endpoint requires APP_SHARED_SECRET to be configured" }, 503);
+  }
+  const header = request.headers.get("Authorization") ?? "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match || !constantTimeEquals(match[1].trim(), env.APP_SHARED_SECRET)) {
+    return json({ error: "unauthorized" }, 401);
+  }
+  const outcome = await runScheduledRefresh(env, { fetch: globalThis.fetch });
+  logRefreshOutcome(outcome, "manual");
+  const httpStatus = outcome.status === "failed" ? 502 : outcome.status === "misconfigured" ? 500 : 200;
+  return json({ outcome }, httpStatus);
+}
+
+function logRefreshOutcome(outcome: RefreshOutcome, source: string): void {
+  const record: Record<string, unknown> = {
+    event: "robinhood_mcp_token_refresh",
+    source,
+    status: outcome.status
+  };
+  if (outcome.status === "refreshed") {
+    record.expiresInSeconds = outcome.expiresInSeconds;
+    record.rotatedRefreshToken = outcome.rotatedRefreshToken;
+    record.updatedSecrets = outcome.updatedSecrets;
+  } else if (outcome.status === "skipped") {
+    record.reason = outcome.reason;
+    record.expiresInSeconds = outcome.expiresInSeconds;
+  } else if (outcome.status === "disabled" || outcome.status === "failed") {
+    record.reason = outcome.reason;
+    if (outcome.status === "failed") record.stage = outcome.stage;
+  } else if (outcome.status === "misconfigured") {
+    record.reason = outcome.reason;
+    record.missing = outcome.missing;
+  }
+  console.log(JSON.stringify(record));
+}
 
 export function isMcpAuthRequired(env: Env) {
   const flag = (env.MCP_REQUIRE_AUTH ?? "").trim().toLowerCase();
