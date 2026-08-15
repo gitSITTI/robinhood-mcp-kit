@@ -116,10 +116,53 @@ requires updating the ChatGPT app connector to send
 
 Left for a later PR.
 
-## H5 — Automate MCP OAuth token refresh (RH-5, P1) [not in this PR]
+## H5 — Automate MCP OAuth token refresh (RH-5, P1)
 
-Left for a later PR. The v0.2.0 Worker at least surfaces expired tokens
-with a clean, actionable error instead of a confusing upstream 401.
+**Status:** code-complete on the RH-5 branch. Operator provisioning
+pending.
+
+The Worker at `chatgpt-app/` now ships an automated refresh path:
+
+- `chatgpt-app/src/refresh.ts` — pure, testable functions:
+  `shouldRefreshAccessToken`, `callTokenEndpoint`, `putWorkerSecret`,
+  and `runScheduledRefresh` (the orchestrator).
+- `chatgpt-app/src/index.ts` — Cloudflare `scheduled` handler wired to
+  the cron trigger, plus `POST /refresh-token` for operator-triggered
+  verify (gated by `APP_SHARED_SECRET`).
+- `chatgpt-app/wrangler.jsonc` — `triggers.crons: ["*/15 * * * *"]` and
+  a `TOKEN_REFRESH_ENABLED=false` var. Shipping the code does not turn
+  on the refresh loop; the flag stays off until an operator completes
+  provisioning.
+- `chatgpt-app/tests/refresh.test.ts` — 19 offline tests that exercise
+  the token endpoint, Cloudflare secrets API, `scheduled`, and
+  `/refresh-token` via `installFetchHarness`. No live credentials.
+
+### Acceptance
+
+- `npm test` in `chatgpt-app/` still passes without live credentials.
+- The refresh path is exercised end-to-end with fake token and
+  Cloudflare API endpoints in `refresh.test.ts`.
+- With `TOKEN_REFRESH_ENABLED=false`, both the cron tick and
+  `POST /refresh-token` return `{ status: "disabled" }` and make zero
+  network calls (asserted in tests).
+
+### Remaining operator steps
+
+Full runbook: [`docs/runbooks/rotate-secrets.md`](rotate-secrets.md).
+Short version:
+
+1. Configure `ROBINHOOD_MCP_OAUTH_TOKEN_ENDPOINT` and
+   `ROBINHOOD_MCP_OAUTH_CLIENT_ID` from the trading MCP's OAuth
+   discovery metadata (Worker vars, not secrets).
+2. Mint a scoped Cloudflare API token with `Workers Scripts:Edit` and
+   set it as the `CLOUDFLARE_SECRETS_API_TOKEN` Worker secret. Also set
+   `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_WORKER_NAME` vars.
+3. Set `ROBINHOOD_MCP_TRADING_REFRESH_TOKEN` from the current Codex
+   credentials file.
+4. `wrangler deploy` and flip `TOKEN_REFRESH_ENABLED=true`.
+5. Verify with `POST /refresh-token` using `APP_SHARED_SECRET`.
+6. Confirm the cron schedule matches Robinhood's actual access-token
+   lifetime; tune `TOKEN_REFRESH_THRESHOLD_SECONDS` if needed.
 
 ## H8 — Firebase journal + dashboard (RH-8, P2) [not in this PR]
 
