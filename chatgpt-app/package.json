@@ -1,13 +1,14 @@
 {
   "name": "robinhood-chatgpt-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "tsc --noEmit",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "test": "node --test --experimental-strip-types tests/*.test.ts"
   },
   "dependencies": {
     "@noble/curves": "^1.9.7",
