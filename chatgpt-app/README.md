@@ -17,8 +17,10 @@ orders.
 - `get_equity_quote`
 - `prepare_agentic_equity_order`
 - `place_confirmed_agentic_equity_order`
+- `cancel_equity_order` *(v0.2.0)*
 - `run_no_trade_audit`
 - `get_crypto_quote`
+- `get_crypto_holdings` *(v0.2.0)*
 - `prepare_crypto_market_buy`
 - `place_confirmed_crypto_market_buy`
 - `render_dashboard`
@@ -35,10 +37,26 @@ can enforce `buy_spread == 0`.
 ```powershell
 npm install
 npm run check
+npm test
 wrangler dev
 ```
 
+`npm test` runs the credential-free smoke and schema tests
+(`tests/smoke.test.ts`, `tests/schema.test.ts`, `tests/guards.test.ts`)
+via Node's built-in test runner. No Robinhood tokens are required.
+
 For local secrets, create `.dev.vars` from `.env.example`.
+
+## Deploy
+
+See [`docs/runbooks/deploy-worker.md`](../docs/runbooks/deploy-worker.md).
+After deploy, run the post-deploy smoke test from the repo root:
+
+```bash
+scripts/smoke-test-mcp.sh \
+  --url https://robinhood-chatgpt-app.<subdomain>.workers.dev \
+  --expect-version 0.2.0
+```
 
 ## Cloudflare Secrets
 

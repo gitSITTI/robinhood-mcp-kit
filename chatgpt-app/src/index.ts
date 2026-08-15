@@ -9,6 +9,7 @@ type Env = {
   ROBINHOOD_CRYPTO_TRADE_API_KEY?: string;
   ROBINHOOD_CRYPTO_TRADE_PRIVATE_KEY_BASE64?: string;
   APP_SHARED_SECRET?: string;
+  MCP_REQUIRE_AUTH?: string;
 };
 
 type JsonRpcRequest = {
@@ -18,12 +19,12 @@ type JsonRpcRequest = {
   params?: Record<string, unknown>;
 };
 
-const serverInfo = {
+export const serverInfo = {
   name: "robinhood-chatgpt-app",
-  version: "0.1.0"
+  version: "0.2.0"
 };
 
-const tools = [
+export const tools = [
   {
     name: "get_agentic_account",
     title: "Get Agentic Account",
@@ -159,6 +160,37 @@ const tools = [
     }
   },
   {
+    name: "cancel_equity_order",
+    title: "Cancel Equity Order",
+    description: "Use this to cancel a pending Agentic equity order by order id. This forwards to the Robinhood trading MCP cancel_equity_order tool.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        orderId: { type: "string", description: "The Robinhood equity order id to cancel." }
+      },
+      required: ["orderId"],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    _meta: {
+      "openai/toolInvocation/invoking": "Cancelling equity order",
+      "openai/toolInvocation/invoked": "Equity order cancellation submitted"
+    }
+  },
+  {
+    name: "get_crypto_holdings",
+    title: "Get Crypto Holdings",
+    description: "Use this for a read-only summary of Robinhood Crypto holdings for the authenticated account.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        asset_code: { type: "string", description: "Optional filter, e.g. BTC or USDC" }
+      },
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true }
+  },
+  {
     name: "render_dashboard",
     title: "Render Robinhood Dashboard",
     description: "Use this when the user wants an interactive ChatGPT app dashboard for Robinhood status and guarded trade preparation.",
@@ -178,7 +210,24 @@ export default {
   }
 };
 
+export function isMcpAuthRequired(env: Env) {
+  const flag = (env.MCP_REQUIRE_AUTH ?? "").trim().toLowerCase();
+  return flag === "true" || flag === "1" || flag === "yes";
+}
+
+export function isMcpAuthorized(request: Request, env: Env) {
+  if (!isMcpAuthRequired(env)) return true;
+  const expected = env.APP_SHARED_SECRET;
+  if (!expected) return false;
+  const header = request.headers.get("Authorization") ?? "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match !== null && constantTimeEquals(match[1].trim(), expected);
+}
+
 async function handleMcp(request: Request, env: Env): Promise<Response> {
+  if (!isMcpAuthorized(request, env)) {
+    return json({ error: "unauthorized" }, 401);
+  }
   if (request.method === "GET") return json({ ok: true, serverInfo, tools: tools.map((tool) => tool.name) });
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
@@ -188,7 +237,7 @@ async function handleMcp(request: Request, env: Env): Promise<Response> {
   return json(Array.isArray(body) ? responses : responses[0]);
 }
 
-async function dispatchRpc(rpc: JsonRpcRequest, env: Env) {
+export async function dispatchRpc(rpc: JsonRpcRequest, env: Env) {
   try {
     if (rpc.method === "initialize") {
       return rpcResult(rpc.id, {
@@ -231,6 +280,8 @@ async function callTool(name: string, args: Record<string, unknown>, env: Env) {
   if (name === "get_equity_quote") return getEquityQuote(env, requireString(args.symbol, "symbol").toUpperCase());
   if (name === "prepare_agentic_equity_order") return prepareAgenticEquityOrder(env, args);
   if (name === "place_confirmed_agentic_equity_order") return placeConfirmedAgenticEquityOrder(env, args);
+  if (name === "cancel_equity_order") return cancelEquityOrder(env, args);
+  if (name === "get_crypto_holdings") return getCryptoHoldings(env, args);
   if (name === "run_no_trade_audit") return runNoTradeAudit(env, args);
   if (name === "get_crypto_quote") return getCryptoQuote(env, normalizePair(args.symbol), requireString(args.quantity, "quantity"));
   if (name === "prepare_crypto_market_buy") {
@@ -267,7 +318,7 @@ async function getAgenticAccount(env: Env) {
 }
 
 async function getAgenticAccountRecord(env: Env) {
-  const accounts = asRecord(await robinhoodMcpTool(env, "get_accounts", {}));
+  const accounts = asRecord(await robinhoodMcpToolRaw(env, "get_accounts", {}));
   const accountData = asRecord(accounts.data);
   const list = Array.isArray(accountData.accounts) ? accountData.accounts as Array<Record<string, unknown>> : [];
   const agentic = list.find((account: Record<string, unknown>) => account.agentic_allowed === true);
@@ -317,6 +368,26 @@ async function placeConfirmedAgenticEquityOrder(env: Env, args: Record<string, u
     order: redactAccountNumbers(order),
     result: placed
   });
+}
+
+export async function cancelEquityOrder(env: Env, args: Record<string, unknown>) {
+  const { accountNumber } = await getAgenticAccountRecord(env);
+  const orderId = requireString(args.orderId ?? args.order_id, "orderId");
+  const upstreamArgs = { account_number: accountNumber, order_id: orderId };
+  const result = await robinhoodMcpTool(env, "cancel_equity_order", upstreamArgs);
+  return toolJson("Cancellation request submitted for Agentic equity order.", {
+    accountLast4: accountNumber.slice(-4),
+    orderId,
+    result
+  });
+}
+
+async function getCryptoHoldings(env: Env, args: Record<string, unknown>) {
+  const filter = typeof args.asset_code === "string" && args.asset_code.trim()
+    ? `?asset_code=${encodeURIComponent(args.asset_code.trim().toUpperCase())}`
+    : "";
+  const holdings = await cryptoGet(env, "read", `/api/v1/crypto/trading/holdings/${filter}`);
+  return toolJson("Loaded Robinhood Crypto holdings.", { holdings });
 }
 
 async function runNoTradeAudit(env: Env, args: Record<string, unknown>) {
@@ -388,14 +459,42 @@ async function placeConfirmedCryptoMarketBuy(env: Env, symbol: string, quantity:
   if (confirmationToken !== expected) throw new Error("Confirmation token does not match the current order parameters.");
   const quote = await getCryptoQuoteData(env, symbol, quantity);
   enforceZeroBuySpread(quote.bestBidAsk, requireZeroBuySpread);
+  const clientOrderId = await deriveIdempotentClientOrderId(env, { symbol, quantity, side: "buy", type: "market", confirmationToken });
   const order = await cryptoPost(env, "trade", "/api/v1/crypto/trading/orders/", {
-    client_order_id: crypto.randomUUID(),
+    client_order_id: clientOrderId,
     side: "buy",
     type: "market",
     symbol,
     market_order_config: { asset_quantity: quantity }
   });
-  return toolJson("Submitted confirmed crypto market buy through the v1 non-fee endpoint.", { symbol, quantity, order: redactAccountNumbers(order) });
+  return toolJson("Submitted confirmed crypto market buy through the v1 non-fee endpoint.", { symbol, quantity, clientOrderId, order: redactAccountNumbers(order) });
+}
+
+export async function deriveIdempotentClientOrderId(env: Env, payload: Record<string, string>) {
+  const secret = env.APP_SHARED_SECRET || "local-dev-unsafe-secret";
+  const keys = Object.keys(payload).sort();
+  const canonical = keys.map((key) => `${key}=${payload[key]}`).join("&");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const digest = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(canonical)));
+  return uuidFromBytes(digest);
+}
+
+function uuidFromBytes(bytes: Uint8Array) {
+  const b = new Uint8Array(16);
+  b.set(bytes.subarray(0, 16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = Array.from(b, (byte) => byte.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+}
+
+function constantTimeEquals(a: string, b: string) {
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return mismatch === 0;
 }
 
 async function getCryptoQuoteData(env: Env, symbol: string, quantity: string) {
@@ -407,10 +506,16 @@ async function getCryptoQuoteData(env: Env, symbol: string, quantity: string) {
   return { pair, bestBidAsk, estimatedAsk };
 }
 
-async function robinhoodMcpTool(env: Env, name: string, args: Record<string, unknown>) {
+export async function robinhoodMcpTool(env: Env, name: string, args: Record<string, unknown>) {
+  const content = await robinhoodMcpToolRaw(env, name, args);
+  return redactAccountNumbers(content);
+}
+
+async function robinhoodMcpToolRaw(env: Env, name: string, args: Record<string, unknown>) {
   if (!env.ROBINHOOD_MCP_TRADING_ACCESS_TOKEN) {
     throw new Error("ROBINHOOD_MCP_TRADING_ACCESS_TOKEN is not configured. Sync a fresh Robinhood MCP OAuth access token before using equity tools.");
   }
+  assertAccessTokenNotExpired(env.ROBINHOOD_MCP_TRADING_ACCESS_TOKEN);
   const response = await fetch(env.ROBINHOOD_MCP_TRADING_URL, {
     method: "POST",
     headers: {
@@ -426,8 +531,7 @@ async function robinhoodMcpTool(env: Env, name: string, args: Record<string, unk
   if (rpc.error) throw new Error(rpc.error.message ?? `Robinhood MCP ${name} returned an error`);
   const firstText = rpc.result?.content?.[0]?.text;
   const parsedText = tryParseJson(firstText);
-  const content = rpc.result?.structuredContent ?? parsedText ?? { text: firstText ?? "" };
-  return redactAccountNumbers(content);
+  return rpc.result?.structuredContent ?? parsedText ?? { text: firstText ?? "" };
 }
 
 async function cryptoGet(env: Env, key: "read" | "trade", path: string) {
@@ -473,12 +577,43 @@ async function makeConfirmationToken(env: Env, payload: Record<string, string>) 
   return bytesToBase64(new Uint8Array(await crypto.subtle.sign("HMAC", key, data))).slice(0, 32);
 }
 
-function enforceZeroBuySpread(bestBidAsk: unknown, enabled: boolean) {
+export function enforceZeroBuySpread(bestBidAsk: unknown, enabled: boolean) {
   if (!enabled) return;
   const row = (bestBidAsk as { results?: Array<Record<string, unknown>> })?.results?.[0];
   if (!row) throw new Error("No best bid/ask row returned for zero-spread guard.");
-  const buySpread = String(row.buy_spread ?? "");
-  if (!["0", "0.0", "0.00", "0.0000"].includes(buySpread)) throw new Error(`Zero buy-spread guard failed; buy_spread=${buySpread}`);
+  const raw = row.buy_spread;
+  if (raw === undefined || raw === null || raw === "") {
+    throw new Error("Zero buy-spread guard failed; buy_spread is missing.");
+  }
+  const parsed = typeof raw === "number" ? raw : Number.parseFloat(String(raw));
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Zero buy-spread guard failed; buy_spread=${String(raw)} is not numeric.`);
+  }
+  if (parsed !== 0) {
+    throw new Error(`Zero buy-spread guard failed; buy_spread=${parsed}`);
+  }
+}
+
+export function assertAccessTokenNotExpired(token: string, nowSeconds = Math.floor(Date.now() / 1000)) {
+  const claims = tryDecodeJwtClaims(token);
+  if (!claims) return;
+  const exp = typeof claims.exp === "number" ? claims.exp : Number.parseInt(String(claims.exp ?? ""), 10);
+  if (!Number.isFinite(exp)) return;
+  if (exp <= nowSeconds) {
+    throw new Error("ROBINHOOD_MCP_TRADING_ACCESS_TOKEN is expired. Refresh the Robinhood MCP OAuth access token and redeploy secrets.");
+  }
+}
+
+function tryDecodeJwtClaims(token: string): Record<string, unknown> | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(padded + "=".repeat((4 - (padded.length % 4)) % 4));
+    return JSON.parse(binary) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 function parseMcpResponse(text: string) {

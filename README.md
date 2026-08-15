@@ -46,7 +46,10 @@ Dedicated repo for Robinhood MCP setup notes, client config templates, and secre
 - `configs/` - client-side MCP config examples
 - `scripts/` - PowerShell helpers for MCP install/startup checks and Cloudflare/AWS secret storage
 - `skills/etf-income-calculator/` - reusable Codex workflow for ETF distribution income calculations
-- `chatgpt-app/` - Cloudflare Worker MCP bridge for ChatGPT Apps
+- `chatgpt-app/` - Cloudflare Worker MCP bridge for ChatGPT Apps (`npm test` runs credential-free smoke and schema tests)
+- `docs/runbooks/AGENT_HANDOFF.md` - handoff runbook for RH-* GitHub issues
+- `docs/runbooks/deploy-worker.md` - Cloudflare Worker deploy + smoke test runbook
+- `scripts/smoke-test-mcp.sh` - post-deploy smoke test for the ChatGPT app Worker (no live creds needed)
 - `.env.example` - placeholder environment variables
 
 ## Quick Start: Codex
