@@ -70,11 +70,25 @@ Expected JSON shape in AWS:
 
 ## Deployment
 
+Full runbook: [`docs/runbooks/deploy-worker.md`](runbooks/deploy-worker.md).
+Handoff for the RH-* issues: [`docs/runbooks/AGENT_HANDOFF.md`](runbooks/AGENT_HANDOFF.md).
+
 ```powershell
 cd chatgpt-app
 npm install
 npm run check
+npm test
 npm run deploy
+```
+
+`npm test` runs credential-free smoke and schema tests via Node's built-in
+test runner. After deploy, run the post-deploy smoke test from the repo
+root:
+
+```bash
+scripts/smoke-test-mcp.sh \
+  --url https://robinhood-chatgpt-app.<subdomain>.workers.dev \
+  --expect-version 0.2.0
 ```
 
 Connect ChatGPT Developer Mode to:
